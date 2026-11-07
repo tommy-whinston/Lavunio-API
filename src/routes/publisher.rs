@@ -40,6 +40,15 @@ async fn ensure_owner(user: &AuthUser, author_id: Uuid) -> Result<(), ApiError> 
     Ok(())
 }
 
+fn ensure_author(user: &AuthUser) -> Result<(), ApiError> {
+    if !matches!(user.role.as_str(), "author" | "admin") {
+        return Err(ApiError::Forbidden(
+            "Публикация доступна только авторам".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 async fn release_owner(pool: &PgPool, release_id: Uuid) -> Result<ReleaseOwnerRow, ApiError> {
     sqlx::query_as::<_, ReleaseOwnerRow>(
         r#"
@@ -97,6 +106,7 @@ pub async fn create_mode(
     Json(body): Json<CreateModeRequest>,
 ) -> Result<Json<CreateModeResponse>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
+    ensure_author(&user)?;
     let slug = body.slug.trim().to_lowercase();
     if !super::validate_slug(&slug) {
         return Err(ApiError::BadRequest(

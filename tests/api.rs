@@ -268,3 +268,25 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
     assert_eq!(catalog["total"], 1);
     assert_eq!(catalog["items"][0]["slug"], "api-test");
 }
+
+#[sqlx::test]
+async fn players_cannot_create_modes(pool: PgPool) {
+    prepare(&pool).await;
+    let (_, token) = create_user_token(&pool, "player", "player").await;
+    let (state, _dir) = test_state(pool);
+    let app = app(state);
+
+    let (status, body) = send(
+        app,
+        Method::POST,
+        "/v1/publisher/modes",
+        Some(&token),
+        Some(json!({
+            "slug": "player-mode",
+            "title": "Player Mode"
+        })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+}
