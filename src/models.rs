@@ -275,6 +275,29 @@ pub struct AccountUser {
     pub avatar_url: Option<String>,
     pub role: String,
     pub created_at: DateTime<Utc>,
+    pub minecraft_uuid: Option<String>,
+    pub skin_url: Option<String>,
+    pub skin_model: String,
+    pub cape_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameProfile {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameSessionResponse {
+    pub access_token: String,
+    pub client_token: String,
+    pub expires_in: i64,
+    pub profile: GameProfile,
+    pub skin_url: Option<String>,
+    pub skin_model: String,
+    pub cape_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

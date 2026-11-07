@@ -25,6 +25,8 @@ pub struct Config {
     pub refresh_token_ttl_secs: u64,
     pub email_token_ttl_secs: u64,
     pub reset_token_ttl_secs: u64,
+    pub game_token_ttl_secs: u64,
+    pub skin_domains: Vec<String>,
 }
 
 impl Config {
@@ -81,6 +83,9 @@ impl Config {
         let refresh_token_ttl_secs = env_u64("LAVUNIO_REFRESH_TTL_SECS", 30 * 24 * 60 * 60);
         let email_token_ttl_secs = env_u64("LAVUNIO_EMAIL_TTL_SECS", 24 * 60 * 60);
         let reset_token_ttl_secs = env_u64("LAVUNIO_RESET_TTL_SECS", 60 * 60);
+        let game_token_ttl_secs = env_u64("LAVUNIO_GAME_TTL_SECS", 30 * 24 * 60 * 60);
+        let skin_domains =
+            env_list("SKIN_DOMAINS").unwrap_or_else(|| default_skin_domains(&public_base_url));
 
         Self {
             database_url,
@@ -103,6 +108,8 @@ impl Config {
             refresh_token_ttl_secs,
             email_token_ttl_secs,
             reset_token_ttl_secs,
+            game_token_ttl_secs,
+            skin_domains,
         }
     }
 
@@ -128,8 +135,39 @@ impl Config {
             refresh_token_ttl_secs: 30 * 24 * 60 * 60,
             email_token_ttl_secs: 24 * 60 * 60,
             reset_token_ttl_secs: 60 * 60,
+            game_token_ttl_secs: 30 * 24 * 60 * 60,
+            skin_domains: vec!["127.0.0.1".to_string(), "localhost".to_string()],
         }
     }
+}
+
+fn env_list(name: &str) -> Option<Vec<String>> {
+    env::var(name).ok().map(|value| {
+        value
+            .split(',')
+            .map(|item| item.trim().to_string())
+            .filter(|item| !item.is_empty())
+            .collect::<Vec<_>>()
+    })
+}
+
+fn default_skin_domains(public_base_url: &str) -> Vec<String> {
+    let mut domains = vec!["127.0.0.1".to_string(), "localhost".to_string()];
+    let host = public_base_url
+        .split("://")
+        .nth(1)
+        .unwrap_or(public_base_url)
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .trim();
+    if !host.is_empty() && !domains.iter().any(|item| item == host) {
+        domains.push(host.to_string());
+    }
+    domains
 }
 
 fn env_bool(name: &str, default: bool) -> bool {

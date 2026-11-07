@@ -8,6 +8,7 @@ pub mod storage;
 
 use std::sync::Arc;
 
+use axum::extract::State;
 use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::json;
@@ -31,11 +32,21 @@ pub fn app(state: AppState) -> Router {
     let router = Router::new()
         .route(
             "/",
-            get(|| async {
+            get(|State(state): State<AppState>| async move {
                 Json(json!({
                     "name": "Lavunio API",
                     "version": env!("CARGO_PKG_VERSION"),
-                    "docs": "/v1/health"
+                    "docs": "/v1/health",
+                    "meta": {
+                        "serverName": "Lavunio",
+                        "implementationName": "Lavunio API",
+                        "implementationVersion": env!("CARGO_PKG_VERSION"),
+                        "links": {
+                            "homepage": "https://github.com/tommy-whinston/Lavunio"
+                        },
+                        "feature.non_email_login": true
+                    },
+                    "skinDomains": state.config.skin_domains,
                 }))
             }),
         )

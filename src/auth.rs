@@ -24,6 +24,10 @@ pub struct AuthUser {
     pub avatar_url: Option<String>,
     pub role: String,
     pub created_at: DateTime<Utc>,
+    pub minecraft_uuid: Option<Uuid>,
+    pub skin_url: Option<String>,
+    pub skin_model: String,
+    pub cape_url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +47,10 @@ struct AuthRow {
     avatar_url: Option<String>,
     role: String,
     created_at: DateTime<Utc>,
+    minecraft_uuid: Option<Uuid>,
+    skin_url: Option<String>,
+    skin_model: String,
+    cape_url: Option<String>,
 }
 
 impl From<AuthRow> for AuthSession {
@@ -58,6 +66,10 @@ impl From<AuthRow> for AuthSession {
                 avatar_url: row.avatar_url,
                 role: row.role,
                 created_at: row.created_at,
+                minecraft_uuid: row.minecraft_uuid,
+                skin_url: row.skin_url,
+                skin_model: row.skin_model,
+                cape_url: row.cape_url,
             },
         }
     }
@@ -74,6 +86,10 @@ impl AuthUser {
             avatar_url: self.avatar_url.clone(),
             role: self.role.clone(),
             created_at: self.created_at,
+            minecraft_uuid: self.minecraft_uuid.map(|value| value.simple().to_string()),
+            skin_url: self.skin_url.clone(),
+            skin_model: self.skin_model.clone(),
+            cape_url: self.cape_url.clone(),
         }
     }
 }
@@ -194,7 +210,8 @@ pub async fn require_session(pool: &PgPool, headers: &HeaderMap) -> Result<AuthS
         r#"
         SELECT NULL::uuid AS session_id,
                u.id, u.username, u.display_name, u.email, u.email_verified_at,
-               u.avatar_url, u.role, u.created_at
+               u.avatar_url, u.role, u.created_at, u.minecraft_uuid, u.skin_url,
+               u.skin_model, u.cape_url
         FROM api_tokens t
         JOIN users u ON u.id = t.user_id
         WHERE t.token_hash = $1
@@ -216,7 +233,8 @@ pub async fn require_session(pool: &PgPool, headers: &HeaderMap) -> Result<AuthS
         r#"
         SELECT s.id AS session_id,
                u.id, u.username, u.display_name, u.email, u.email_verified_at,
-               u.avatar_url, u.role, u.created_at
+               u.avatar_url, u.role, u.created_at, u.minecraft_uuid, u.skin_url,
+               u.skin_model, u.cape_url
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.access_hash = $1
@@ -240,6 +258,23 @@ pub async fn require_session(pool: &PgPool, headers: &HeaderMap) -> Result<AuthS
     }
 
     Ok(row.into())
+}
+
+pub async fn account_by_id(pool: &PgPool, user_id: Uuid) -> Result<AccountUser, ApiError> {
+    let row = sqlx::query_as::<_, AuthRow>(
+        r#"
+        SELECT NULL::uuid AS session_id,
+               u.id, u.username, u.display_name, u.email, u.email_verified_at,
+               u.avatar_url, u.role, u.created_at, u.minecraft_uuid, u.skin_url,
+               u.skin_model, u.cape_url
+        FROM users u
+        WHERE u.id = $1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(AuthSession::from(row).user.account())
 }
 
 pub async fn require_admin(pool: &PgPool, headers: &HeaderMap) -> Result<AuthUser, ApiError> {
@@ -328,7 +363,8 @@ pub async fn rotate_session(
         r#"
         SELECT s.id AS session_id,
                u.id, u.username, u.display_name, u.email, u.email_verified_at,
-               u.avatar_url, u.role, u.created_at
+               u.avatar_url, u.role, u.created_at, u.minecraft_uuid, u.skin_url,
+               u.skin_model, u.cape_url
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.refresh_hash = $1

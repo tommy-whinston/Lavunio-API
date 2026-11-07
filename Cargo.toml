@@ -21,6 +21,8 @@ tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 thiserror = "2"
 sha2 = "0.10"
 hex = "0.4"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png"] }
 argon2 = "0.5"
 aws-sdk-s3 = { version = "1", features = ["behavior-version-latest"] }
 reqwest = { version = "0.13", features = ["rustls"] }

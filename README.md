@@ -19,6 +19,10 @@
 - `POST /v1/auth/password/reset` — сброс пароля по токену.
 - `GET /v1/me` — профиль текущего аккаунта.
 - `GET /v1/me/identities` — привязанные внешние аккаунты.
+- `POST /v1/game/session` — игровая сессия Minecraft для authlib-injector.
+- `PUT /v1/me/skin` — загрузить скин Lavunio; `DELETE /v1/me/skin` — удалить.
+- `PUT /v1/me/cape` — загрузить плащ; `DELETE /v1/me/cape` — удалить.
+- `/authserver/*` и `/sessionserver/*` — Yggdrasil-совместимые endpoints для Minecraft.
 - `GET /v1/catalog` — каталог опубликованных режимов с поиском, тегом и пагинацией.
 - `GET /v1/modes/{slug}` — карточка режима.
 - `GET /v1/modes/{slug}/releases` — опубликованные релизы с файлами.
@@ -93,7 +97,11 @@ Authorization: Bearer <token>
 
 ## Аккаунты Lavunio
 
-Аккаунты используют email и пароль. Пароли хранятся как Argon2id-хеши, access- и refresh-токены — только в виде SHA-256-хешей в таблице `sessions`.
+Аккаунты используют email и пароль. Пароли хранятся как Argon2id-хеши, access- и refresh-токены — только в виде SHA-256-хешей в таблице `sessions`. Игровые токены Minecraft хранятся в `game_sessions`.
+
+Корень API (`GET /`) содержит metadata для `authlib-injector`: имя сервера и `skinDomains`. Yggdrasil-совместимые endpoints находятся в `/authserver` и `/sessionserver`.
+
+Скины и плащи загружаются через `PUT /v1/me/skin` и `PUT /v1/me/cape`, отдаются из storage по `/uploads/skins/...`.
 
 Для локальной разработки включи `LAVUNIO_DEV_MODE=1`: API вернёт `verificationToken` и `resetToken` в ответах, а также напишет их в лог. В production эти поля не возвращаются — токены должны уходить письмом.
 
@@ -103,6 +111,8 @@ Authorization: Bearer <token>
 - `LAVUNIO_REFRESH_TTL_SECS` — срок refresh-токена, по умолчанию 30 дней.
 - `LAVUNIO_EMAIL_TTL_SECS` — срок подтверждения почты, по умолчанию 24 часа.
 - `LAVUNIO_RESET_TTL_SECS` — срок сброса пароля, по умолчанию 1 час.
+- `LAVUNIO_GAME_TTL_SECS` — срок игровой сессии Minecraft, по умолчанию 30 дней.
+- `SKIN_DOMAINS` — домены, с которых Minecraft может загружать скины (через запятую).
 
 ## Тесты
 
@@ -200,7 +210,7 @@ tests/
 
 - Подключить отправку писем для подтверждения почты и сброса пароля.
 - Добавить rate limit на login/register/reset и список устройств.
-- Добавить Ely.by-авторизацию игроков.
+- Проверить вход в Minecraft через authlib-injector на реальном сервере.
 - Добавить отзывы, жалобы, подписки и библиотеку.
 - Подключить аккаунты к лаунчеру.
 

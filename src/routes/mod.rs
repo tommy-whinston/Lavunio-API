@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod auth;
 pub mod catalog;
+pub mod game_auth;
 pub mod health;
 pub mod publisher;
 
@@ -26,6 +27,37 @@ pub fn router() -> Router<AppState> {
         .route("/v1/auth/password/reset", post(auth::reset_password))
         .route("/v1/me", get(auth::me))
         .route("/v1/me/identities", get(auth::identities))
+        .route("/v1/game/session", post(game_auth::create_game_session))
+        .route("/v1/game/logout", post(game_auth::revoke_game_sessions))
+        .route(
+            "/v1/me/skin",
+            put(game_auth::upload_skin)
+                .delete(game_auth::delete_skin)
+                .layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
+        )
+        .route(
+            "/v1/me/cape",
+            put(game_auth::upload_cape)
+                .delete(game_auth::delete_cape)
+                .layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
+        )
+        .route("/authserver/authenticate", post(game_auth::authenticate))
+        .route("/authserver/refresh", post(game_auth::refresh))
+        .route("/authserver/validate", post(game_auth::validate))
+        .route("/authserver/invalidate", post(game_auth::invalidate))
+        .route("/authserver/signout", post(game_auth::signout))
+        .route(
+            "/sessionserver/session/minecraft/profile/{uuid}",
+            get(game_auth::profile),
+        )
+        .route(
+            "/sessionserver/session/minecraft/join",
+            post(game_auth::join),
+        )
+        .route(
+            "/sessionserver/session/minecraft/hasJoined",
+            get(game_auth::has_joined),
+        )
         .route("/v1/catalog", get(catalog::catalog))
         .route("/v1/modes/{slug}", get(catalog::mode_detail))
         .route("/v1/modes/{slug}/releases", get(catalog::releases))

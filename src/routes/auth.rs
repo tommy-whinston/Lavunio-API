@@ -27,6 +27,10 @@ struct LoginRow {
     role: String,
     created_at: DateTime<Utc>,
     password_hash: Option<String>,
+    minecraft_uuid: Option<Uuid>,
+    skin_url: Option<String>,
+    skin_model: String,
+    cape_url: Option<String>,
 }
 
 impl LoginRow {
@@ -40,6 +44,10 @@ impl LoginRow {
             avatar_url: self.avatar_url.clone(),
             role: self.role.clone(),
             created_at: self.created_at,
+            minecraft_uuid: self.minecraft_uuid.map(|value| value.simple().to_string()),
+            skin_url: self.skin_url.clone(),
+            skin_model: self.skin_model.clone(),
+            cape_url: self.cape_url.clone(),
         }
     }
 }
@@ -112,11 +120,11 @@ pub async fn register(
     let expires_at = Utc::now() + ttl(state.config.email_token_ttl_secs);
 
     let mut tx = state.pool.begin().await?;
-    let inserted = sqlx::query_scalar::<_, DateTime<Utc>>(
+    let inserted = sqlx::query_as::<_, (DateTime<Utc>, Uuid)>(
         r#"
         INSERT INTO users (id, username, display_name, email, password_hash, role)
         VALUES ($1, $2, $3, $4, $5, 'player')
-        RETURNING created_at
+        RETURNING created_at, minecraft_uuid
         "#,
     )
     .bind(user_id)
@@ -127,8 +135,8 @@ pub async fn register(
     .fetch_one(&mut *tx)
     .await;
 
-    let created_at = match inserted {
-        Ok(created_at) => created_at,
+    let (created_at, minecraft_uuid) = match inserted {
+        Ok(row) => row,
         Err(error) => {
             if let sqlx::Error::Database(database_error) = &error {
                 if database_error.code().as_deref() == Some("23505") {
@@ -198,6 +206,10 @@ pub async fn register(
             avatar_url: None,
             role: "player".to_string(),
             created_at,
+            minecraft_uuid: Some(minecraft_uuid.simple().to_string()),
+            skin_url: None,
+            skin_model: "classic".to_string(),
+            cape_url: None,
         },
         tokens,
         verification_token: state.config.dev_mode.then_some(verification_token),
@@ -213,7 +225,7 @@ pub async fn login(
     let row = sqlx::query_as::<_, LoginRow>(
         r#"
         SELECT id, username, display_name, email, email_verified_at, avatar_url, role,
-               created_at, password_hash
+               created_at, password_hash, minecraft_uuid, skin_url, skin_model, cape_url
         FROM users
         WHERE lower(email) = $1
         "#,
@@ -535,6 +547,12 @@ pub async fn reset_password(
         .bind(user_id)
         .execute(&mut *tx)
         .await?;
+    sqlx::query(
+        "UPDATE game_sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
 
     Ok(Json(SimpleStatus {
