@@ -303,6 +303,68 @@ async fn duplicate_email_and_username_rejected(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn resend_verification_invalidates_previous_token(pool: PgPool) {
+    let (state, _dir) = test_state(pool);
+    let app = app(state);
+
+    let registered = register(&app, "resend@example.com", "resend_user", "password 123").await;
+    let access = registered["tokens"]["accessToken"]
+        .as_str()
+        .expect("access token")
+        .to_string();
+    let old_token = registered["verificationToken"]
+        .as_str()
+        .expect("verification token")
+        .to_string();
+
+    let (status, resent) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/auth/verify-email/resend",
+        Some(&access),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{resent}");
+    let new_token = resent["verificationToken"]
+        .as_str()
+        .expect("reissued verification token")
+        .to_string();
+    assert_ne!(new_token, old_token);
+
+    let (status, _) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/auth/verify-email",
+        None,
+        Some(json!({ "token": old_token })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, verified) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/auth/verify-email",
+        None,
+        Some(json!({ "token": new_token })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{verified}");
+
+    let (status, again) = send(
+        app,
+        Method::POST,
+        "/v1/auth/verify-email/resend",
+        Some(&access),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{again}");
+    assert!(again.get("verificationToken").is_none());
+}
+
+#[sqlx::test]
 async fn registration_validates_input(pool: PgPool) {
     let (state, _dir) = test_state(pool);
     let app = app(state);
