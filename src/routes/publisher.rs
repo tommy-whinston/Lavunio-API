@@ -9,9 +9,10 @@ use uuid::Uuid;
 use crate::auth::{self, AuthUser};
 use crate::error::ApiError;
 use crate::models::{
-    Asset, CreateModeRequest, CreateModeResponse, CreateReleaseRequest, CreateReleaseResponse,
-    SimpleStatus, UploadUrlRequest, UploadUrlResponse,
+    Asset, CompleteAssetRequest, CreateModeRequest, CreateModeResponse, CreateReleaseRequest,
+    CreateReleaseResponse, SimpleStatus, UploadUrlRequest, UploadUrlResponse,
 };
+use crate::storage::{Storage, StorageKind};
 use crate::AppState;
 
 #[derive(Debug, FromRow)]
@@ -27,6 +28,7 @@ struct AssetUploadRow {
     status: String,
     size: i64,
     sha256: Option<String>,
+    storage_key: Option<String>,
 }
 
 async fn ensure_owner(user: &AuthUser, author_id: Uuid) -> Result<(), ApiError> {
@@ -223,10 +225,41 @@ pub async fn upload_url(
     }
 
     let asset_id = Uuid::new_v4();
+    let storage_kind = state.storage.kind();
+    let storage_key =
+        Storage::asset_key(release.mode_id, release_id, asset_id, body.file_name.trim());
+
+    let upload_url = if storage_kind == StorageKind::S3 {
+        state
+            .storage
+            .presign_put(&storage_key, state.config.s3_presign_expires_secs)
+            .await
+            .map_err(ApiError::Internal)?
+    } else {
+        format!(
+            "{}/v1/publisher/releases/{}/assets/{}/upload",
+            state.config.public_base_url.trim_end_matches('/'),
+            release_id,
+            asset_id
+        )
+    };
+
+    let complete_url = if storage_kind == StorageKind::S3 {
+        Some(format!(
+            "{}/v1/publisher/releases/{}/assets/{}/complete",
+            state.config.public_base_url.trim_end_matches('/'),
+            release_id,
+            asset_id
+        ))
+    } else {
+        None
+    };
+
     sqlx::query(
         r#"
-        INSERT INTO release_assets (id, release_id, kind, url, size, sha256)
-        VALUES ($1, $2, $3, '', $4, $5)
+        INSERT INTO release_assets
+            (id, release_id, kind, url, size, sha256, file_name, storage_key, storage_kind)
+        VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8)
         "#,
     )
     .bind(asset_id)
@@ -234,20 +267,18 @@ pub async fn upload_url(
     .bind(kind)
     .bind(body.size.max(0))
     .bind(&body.sha256)
+    .bind(body.file_name.trim())
+    .bind(&storage_key)
+    .bind(storage_kind.as_str())
     .execute(&state.pool)
     .await?;
-
-    let upload_url = format!(
-        "{}/v1/publisher/releases/{}/assets/{}/upload",
-        state.config.public_base_url.trim_end_matches('/'),
-        release_id,
-        asset_id
-    );
 
     Ok(Json(UploadUrlResponse {
         asset_id,
         upload_url,
         method: "PUT",
+        storage: storage_kind.as_str().to_string(),
+        complete_url,
     }))
 }
 
@@ -257,10 +288,16 @@ pub async fn upload_asset(
     Path((release_id, asset_id)): Path<(Uuid, Uuid)>,
     bytes: Bytes,
 ) -> Result<Json<Asset>, ApiError> {
+    if state.storage.kind() == StorageKind::S3 {
+        return Err(ApiError::BadRequest(
+            "Для S3 используй pre-signed URL и endpoint complete".to_string(),
+        ));
+    }
+
     let user = auth::require_user(&state.pool, &headers).await?;
     let asset = sqlx::query_as::<_, AssetUploadRow>(
         r#"
-        SELECT m.author_id, r.status, a.size, a.sha256
+        SELECT m.author_id, r.status, a.size, a.sha256, a.storage_key
         FROM release_assets a
         JOIN releases r ON r.id = a.release_id
         JOIN modes m ON m.id = r.mode_id
@@ -296,29 +333,115 @@ pub async fn upload_asset(
         }
     }
 
-    state.storage.ensure_dir().map_err(ApiError::Internal)?;
-    let path = state.storage.path_for(asset_id);
+    let key = asset
+        .storage_key
+        .clone()
+        .unwrap_or_else(|| asset_id.to_string());
+    state
+        .storage
+        .ensure_local_dir()
+        .map_err(ApiError::Internal)?;
+    let path = state
+        .storage
+        .local_path(&key)
+        .ok_or_else(|| ApiError::Internal("Локальное хранилище недоступно".to_string()))?;
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|error| ApiError::Internal(format!("Не удалось создать папку: {error}")))?;
+    }
     tokio::fs::write(&path, &bytes)
         .await
         .map_err(|error| ApiError::Internal(format!("Не удалось сохранить файл: {error}")))?;
 
-    let url = state.storage.url_for(asset_id);
-    sqlx::query("UPDATE release_assets SET url = $1, size = $2, sha256 = $3 WHERE id = $4")
+    let url = state.storage.public_url(&key);
+    sqlx::query(
+        "UPDATE release_assets SET url = $1, size = $2, sha256 = $3, storage_kind = $4 WHERE id = $5",
+    )
+    .bind(&url)
+    .bind(bytes.len() as i64)
+    .bind(&sha256)
+    .bind(StorageKind::Local.as_str())
+    .bind(asset_id)
+    .execute(&state.pool)
+    .await?;
+
+    let updated = asset_by_id(&state.pool, asset_id).await?;
+    Ok(Json(updated))
+}
+
+pub async fn complete_asset(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((release_id, asset_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<CompleteAssetRequest>,
+) -> Result<Json<Asset>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let asset = sqlx::query_as::<_, AssetUploadRow>(
+        r#"
+        SELECT m.author_id, r.status, a.size, a.sha256, a.storage_key
+        FROM release_assets a
+        JOIN releases r ON r.id = a.release_id
+        JOIN modes m ON m.id = r.mode_id
+        WHERE a.id = $1 AND a.release_id = $2
+        "#,
+    )
+    .bind(asset_id)
+    .bind(release_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("Файл не найден".to_string()))?;
+
+    ensure_owner(&user, asset.author_id).await?;
+    if asset.status == "published" {
+        return Err(ApiError::Conflict(
+            "Опубликованный релиз нельзя изменить".to_string(),
+        ));
+    }
+
+    if state.storage.kind() == StorageKind::S3 {
+        let key = asset
+            .storage_key
+            .as_deref()
+            .ok_or_else(|| ApiError::BadRequest("У файла нет storage_key".to_string()))?;
+        let size = state
+            .storage
+            .head_size(key)
+            .await
+            .map_err(ApiError::Internal)?;
+        if let Some(expected) = body.size {
+            if expected >= 0 && expected as u64 != size {
+                return Err(ApiError::BadRequest(format!(
+                    "Размер файла не совпадает: ожидалось {expected}, в S3 {size}"
+                )));
+            }
+        }
+        let sha256 = body.sha256.or(asset.sha256);
+        let url = state.storage.public_url(key);
+        sqlx::query(
+            "UPDATE release_assets SET url = $1, size = $2, sha256 = $3, storage_kind = $4 WHERE id = $5",
+        )
         .bind(&url)
-        .bind(bytes.len() as i64)
+        .bind(size as i64)
         .bind(&sha256)
+        .bind(StorageKind::S3.as_str())
         .bind(asset_id)
         .execute(&state.pool)
         .await?;
+    }
 
-    let updated = sqlx::query_as::<_, Asset>(
-        "SELECT id, kind, url, size, sha256, parts, manifest FROM release_assets WHERE id = $1",
+    let updated = asset_by_id(&state.pool, asset_id).await?;
+    Ok(Json(updated))
+}
+
+async fn asset_by_id(pool: &PgPool, asset_id: Uuid) -> Result<Asset, ApiError> {
+    sqlx::query_as::<_, Asset>(
+        "SELECT id, kind, url, size, sha256, parts, manifest, file_name, storage_key, storage_kind FROM release_assets WHERE id = $1",
     )
     .bind(asset_id)
-    .fetch_one(&state.pool)
-    .await?;
-
-    Ok(Json(updated))
+    .fetch_one(pool)
+    .await
+    .map_err(ApiError::from)
 }
 
 pub async fn submit_release(

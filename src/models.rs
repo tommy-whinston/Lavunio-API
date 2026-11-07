@@ -58,6 +58,9 @@ pub struct Asset {
     pub sha256: Option<String>,
     pub parts: Value,
     pub manifest: Option<Value>,
+    pub file_name: Option<String>,
+    pub storage_key: Option<String>,
+    pub storage_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -149,6 +152,16 @@ pub struct UploadUrlResponse {
     pub asset_id: Uuid,
     pub upload_url: String,
     pub method: &'static str,
+    pub storage: String,
+    pub complete_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompleteAssetRequest {
+    #[serde(default)]
+    pub size: Option<i64>,
+    pub sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

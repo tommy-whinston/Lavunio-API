@@ -30,6 +30,10 @@ pub fn router() -> Router<AppState> {
             put(publisher::upload_asset).layer(DefaultBodyLimit::max(512 * 1024 * 1024)),
         )
         .route(
+            "/v1/publisher/releases/{release_id}/assets/{asset_id}/complete",
+            post(publisher::complete_asset),
+        )
+        .route(
             "/v1/publisher/releases/{id}/submit",
             post(publisher::submit_release),
         )

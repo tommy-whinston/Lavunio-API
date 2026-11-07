@@ -104,7 +104,8 @@ async fn mode_row_by_slug(pool: &PgPool, slug: &str) -> Result<ModeRow, ApiError
 async fn assets_for(pool: &PgPool, release_id: Uuid) -> Result<Vec<Asset>, ApiError> {
     let assets = sqlx::query_as::<_, Asset>(
         r#"
-        SELECT id, kind, url, size, sha256, parts, manifest
+        SELECT id, kind, url, size, sha256, parts, manifest,
+               file_name, storage_key, storage_kind
         FROM release_assets
         WHERE release_id = $1
         ORDER BY created_at

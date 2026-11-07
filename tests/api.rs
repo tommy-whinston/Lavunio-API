@@ -1,0 +1,270 @@
+use std::sync::Arc;
+
+use axum::body::{Body, Bytes};
+use axum::http::{header, Method, Request, StatusCode};
+use axum::Router;
+use http_body_util::BodyExt;
+use serde_json::{json, Value};
+use sqlx::PgPool;
+use tower::ServiceExt;
+use uuid::Uuid;
+
+use lavunio_api::auth;
+use lavunio_api::config::Config;
+use lavunio_api::storage::Storage;
+use lavunio_api::{app, AppState};
+
+fn test_state(pool: PgPool) -> (AppState, tempfile::TempDir) {
+    let dir = tempfile::tempdir().expect("temp storage");
+    let config = Config::local(String::new(), dir.path().to_path_buf());
+    let storage = Storage::new(&config).expect("local storage");
+    (
+        AppState {
+            config: Arc::new(config),
+            pool,
+            storage: Arc::new(storage),
+        },
+        dir,
+    )
+}
+
+async fn prepare(pool: &PgPool) {
+    sqlx::migrate!("./migrations")
+        .run(pool)
+        .await
+        .expect("migrations");
+}
+
+async fn create_user_token(pool: &PgPool, username: &str, role: &str) -> (Uuid, String) {
+    let user_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id, username, display_name, role) VALUES ($1, $2, $2, $3)")
+        .bind(user_id)
+        .bind(username)
+        .bind(role)
+        .execute(pool)
+        .await
+        .expect("insert user");
+
+    let token = format!("test_{}", Uuid::new_v4());
+    sqlx::query(
+        "INSERT INTO api_tokens (id, user_id, name, token_hash, scopes) VALUES ($1, $2, 'test', $3, '[\"publisher\",\"admin\"]'::jsonb)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(user_id)
+    .bind(auth::hash_token(&token))
+    .execute(pool)
+    .await
+    .expect("insert token");
+
+    (user_id, token)
+}
+
+async fn send(
+    app: Router,
+    method: Method,
+    uri: &str,
+    token: Option<&str>,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder().method(method).uri(uri);
+    if let Some(token) = token {
+        builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    let body = match body {
+        Some(value) => Body::from(serde_json::to_vec(&value).expect("json body")),
+        None => Body::empty(),
+    };
+    let request = builder
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(body)
+        .expect("request");
+    let response = app.oneshot(request).await.expect("request result");
+    let status = response.status();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    let value = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
+    };
+    (status, value)
+}
+
+async fn send_bytes(
+    app: Router,
+    method: Method,
+    uri: &str,
+    token: &str,
+    bytes: Bytes,
+) -> (StatusCode, Value) {
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::from(bytes))
+        .expect("request");
+    let response = app.oneshot(request).await.expect("request result");
+    let status = response.status();
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    let value = if body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&body).unwrap_or(Value::Null)
+    };
+    (status, value)
+}
+
+#[sqlx::test]
+async fn catalog_returns_only_published_modes(pool: PgPool) {
+    prepare(&pool).await;
+    let (user_id, _) = create_user_token(&pool, "publisher", "admin").await;
+
+    sqlx::query(
+        "INSERT INTO modes (id, slug, title, status, author_id) VALUES ($1, 'draft-mode', 'Draft', 'draft', $2)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("draft mode");
+
+    let published_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO modes (id, slug, title, status, author_id) VALUES ($1, 'published-mode', 'Published', 'published', $2)",
+    )
+    .bind(published_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("published mode");
+
+    sqlx::query(
+        "INSERT INTO releases (id, mode_id, version, status, published_at) VALUES ($1, $2, '1.0.0', 'published', now())",
+    )
+    .bind(Uuid::new_v4())
+    .bind(published_id)
+    .execute(&pool)
+    .await
+    .expect("release");
+
+    let (state, _dir) = test_state(pool);
+    let (status, body) = send(app(state), Method::GET, "/v1/catalog", None, None).await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["total"], 1);
+    assert_eq!(body["items"][0]["slug"], "published-mode");
+}
+
+#[sqlx::test]
+async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
+    prepare(&pool).await;
+    let (_, token) = create_user_token(&pool, "admin", "admin").await;
+    let (state, _dir) = test_state(pool);
+    let app = app(state);
+
+    let (status, mode) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/publisher/modes",
+        Some(&token),
+        Some(json!({
+            "slug": "api-test",
+            "title": "API Test",
+            "shortDescription": "Test mode",
+            "description": "Created by integration test",
+            "tags": ["test", "api"]
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{mode}");
+    let mode_id = mode["id"].as_str().expect("mode id");
+
+    let (status, release) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/publisher/modes/{mode_id}/releases"),
+        Some(&token),
+        Some(json!({ "version": "0.1.0", "changelog": "First release" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{release}");
+    let release_id = release["id"].as_str().expect("release id");
+
+    let (status, upload) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/publisher/releases/{release_id}/assets/upload-url"),
+        Some(&token),
+        Some(json!({
+            "kind": "archive",
+            "fileName": "build.zip",
+            "size": 11
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{upload}");
+    assert_eq!(upload["storage"], "local");
+    let upload_url = upload["uploadUrl"].as_str().expect("upload url");
+    let upload_path = upload_url
+        .strip_prefix("http://test")
+        .expect("test public base url");
+
+    let (status, asset) = send_bytes(
+        app.clone(),
+        Method::PUT,
+        upload_path,
+        &token,
+        Bytes::from_static(b"hello world"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{asset}");
+    assert_eq!(asset["size"], 11);
+    assert!(asset["url"].as_str().unwrap().contains("/uploads/"));
+
+    let (status, submitted) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/publisher/releases/{release_id}/submit"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{submitted}");
+    assert_eq!(submitted["status"], "pending");
+
+    let (status, queue) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/admin/moderation/queue",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{queue}");
+    assert_eq!(queue.as_array().unwrap().len(), 1);
+
+    let (status, approved) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/admin/moderation/{release_id}/approve"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{approved}");
+    assert_eq!(approved["status"], "published");
+
+    let (status, catalog) = send(app, Method::GET, "/v1/catalog?q=API%20Test", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{catalog}");
+    assert_eq!(catalog["total"], 1);
+    assert_eq!(catalog["items"][0]["slug"], "api-test");
+}

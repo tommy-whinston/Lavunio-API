@@ -15,8 +15,9 @@
 - `GET /v1/authors/{slug}` — профиль автора и его режимы.
 - `POST /v1/publisher/modes` — создать черновик режима.
 - `POST /v1/publisher/modes/{id}/releases` — создать черновик релиза.
-- `POST /v1/publisher/releases/{id}/assets/upload-url` — получить URL для загрузки файла.
-- `PUT /v1/publisher/releases/{release_id}/assets/{asset_id}/upload` — загрузить файл.
+- `POST /v1/publisher/releases/{id}/assets/upload-url` — получить URL для загрузки файла (local или S3/R2 pre-signed).
+- `PUT /v1/publisher/releases/{release_id}/assets/{asset_id}/upload` — загрузить файл через API (local storage).
+- `POST /v1/publisher/releases/{release_id}/assets/{asset_id}/complete` — подтвердить загрузку в S3/R2.
 - `POST /v1/publisher/releases/{id}/submit` — отправить релиз на модерацию.
 - `GET /v1/admin/moderation/queue` — очередь модерации.
 - `POST /v1/admin/moderation/{id}/approve` — одобрить релиз.
@@ -29,7 +30,7 @@
 - Rust 1.80+.
 - PostgreSQL 16.
 - Docker Desktop или локальный PostgreSQL.
-- MinIO — опционально, для будущего S3-адаптера.
+- S3-совместимое хранилище (Cloudflare R2, MinIO, AWS S3) — для production.
 
 ## Быстрый старт
 
@@ -77,6 +78,15 @@ curl http://127.0.0.1:8080/v1/modes/night-demon
 Authorization: Bearer <token>
 ```
 
+## Тесты
+
+Интеграционные тесты используют PostgreSQL и создают временные БД:
+
+```powershell
+$env:DATABASE_URL="postgres://postgres:postgres@localhost:5432/postgres"
+cargo test --all-targets
+```
+
 Пример создания черновика:
 
 ```powershell
@@ -86,11 +96,27 @@ curl -X POST http://127.0.0.1:8080/v1/publisher/modes `
   -d '{\"slug\":\"my-mode\",\"title\":\"My Mode\",\"shortDescription\":\"Test\",\"tags\":[\"pvp\"]}'
 ```
 
-## Файлы
+## Файлы и S3
 
-Сейчас файлы сохраняются локально в `data/uploads/` и отдаются по `/uploads/{assetId}`. Это временная замена R2/S3 для локальной разработки. В production `POST /assets/upload-url` будет возвращать pre-signed URL Cloudflare R2, а API не будет проксировать большие файлы через себя.
+По умолчанию файлы сохраняются локально в `data/uploads/` и отдаются по `/uploads/{assetId}`.
 
-`docker-compose.yml` уже содержит MinIO — он понадобится на следующем шаге.
+Для S3/R2:
+
+```env
+STORAGE_KIND=s3
+S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+S3_REGION=auto
+S3_BUCKET=lavunio
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
+S3_PUBLIC_BASE_URL=https://cdn.example.com
+S3_FORCE_PATH_STYLE=true
+S3_PRESIGN_EXPIRES_SECS=3600
+```
+
+В S3-режиме `upload-url` возвращает pre-signed `PUT` URL и `completeUrl`. После загрузки клиент вызывает `complete`, API проверяет объект через `HEAD` и сохраняет публичный URL. API не проксирует большие файлы через себя.
+
+`docker-compose.yml` содержит MinIO для локальной проверки S3-режима.
 
 ## Структура
 
@@ -111,6 +137,7 @@ src/
     admin.rs
 migrations/
   0001_init.sql
+  0002_storage_keys.sql
 seed/
   modes.json
   *.manifest.json
@@ -118,11 +145,10 @@ seed/
 
 ## Следующие шаги
 
-- Перевести хранилище на Cloudflare R2 + pre-signed URL.
+- Добавить интеграционные тесты с PostgreSQL.
 - Добавить Ely.by-авторизацию игроков.
 - Добавить отзывы, жалобы, подписки и библиотеку.
 - Подключить лаунчер к API вместо GitHub-каталога.
-- Добавить интеграционные тесты с PostgreSQL.
 
 ## Планы
 
