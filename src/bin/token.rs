@@ -1,6 +1,6 @@
-use tmstore_api::auth;
-use tmstore_api::config::Config;
-use tmstore_api::db;
+use lavunio_api::auth;
+use lavunio_api::config::Config;
+use lavunio_api::db;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

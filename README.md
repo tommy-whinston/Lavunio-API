@@ -1,6 +1,6 @@
-# TMStore API
+# Lavunio API
 
-Локальный backend TMStore: каталог режимов, релизы, авторы, черновики, загрузка файлов и минимальная модерация.
+Локальный backend Lavunio: каталог режимов, релизы, авторы, черновики, загрузка файлов и минимальная модерация.
 
 Текущая версия — **MVP для локальной разработки**. Целевая production-схема: PostgreSQL + R2/S3 + CDN.
 
@@ -59,7 +59,7 @@ cargo run --bin token -- tm "Local publisher" publisher
 ```
 
 Для модерации удобно использовать bootstrap-токен из `.env`:
-`TMSTORE_BOOTSTRAP_TOKEN=...` создаст пользователя `tm` с ролью `admin`.
+`LAVUNIO_BOOTSTRAP_TOKEN=...` создаст пользователя `tm` с ролью `admin`.
 
 ## Проверка
 

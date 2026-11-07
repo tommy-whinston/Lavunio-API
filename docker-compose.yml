@@ -2,15 +2,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: tmstore
-      POSTGRES_USER: tmstore
-      POSTGRES_PASSWORD: tmstore
+      POSTGRES_DB: lavunio
+      POSTGRES_USER: lavunio
+      POSTGRES_PASSWORD: lavunio
     ports:
       - "5432:5432"
     volumes:
-      - tmstore-db:/var/lib/postgresql/data
+      - lavunio-db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tmstore -d tmstore"]
+      test: ["CMD-SHELL", "pg_isready -U lavunio -d lavunio"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -19,13 +19,13 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: tmstore
-      MINIO_ROOT_PASSWORD: tmstore-secret
+      MINIO_ROOT_USER: lavunio
+      MINIO_ROOT_PASSWORD: lavunio-secret
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - tmstore-minio:/data
+      - lavunio-minio:/data
 
   minio-init:
     image: minio/mc:latest
@@ -33,11 +33,11 @@ services:
       - minio
     entrypoint: >
       /bin/sh -c "
-      until mc alias set local http://minio:9000 tmstore tmstore-secret; do sleep 1; done;
-      mc mb -p local/tmstore || true;
-      mc anonymous set download local/tmstore || true;
+      until mc alias set local http://minio:9000 lavunio lavunio-secret; do sleep 1; done;
+      mc mb -p local/lavunio || true;
+      mc anonymous set download local/lavunio || true;
       "
 
 volumes:
-  tmstore-db:
-  tmstore-minio:
+  lavunio-db:
+  lavunio-minio:

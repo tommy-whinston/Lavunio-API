@@ -10,7 +10,7 @@ COPY src ./src
 COPY migrations ./migrations
 COPY seed ./seed
 
-RUN cargo build --release --bin tmstore-api
+RUN cargo build --release --bin lavunio-api
 
 FROM debian:bookworm-slim
 
@@ -19,11 +19,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY --from=builder /app/target/release/tmstore-api /usr/local/bin/tmstore-api
+COPY --from=builder /app/target/release/lavunio-api /usr/local/bin/lavunio-api
 
 ENV HOST=0.0.0.0
 ENV PORT=8080
 ENV STORAGE_DIR=/app/data/uploads
 
 EXPOSE 8080
-CMD ["tmstore-api"]
+CMD ["lavunio-api"]

@@ -1,10 +1,10 @@
 [package]
-name = "tmstore-api"
+name = "lavunio-api"
 version = "0.1.0"
 edition = "2021"
-description = "TMStore backend API"
+description = "Lavunio backend API"
 license = "MIT"
-default-run = "tmstore-api"
+default-run = "lavunio-api"
 
 [dependencies]
 axum = "0.8"

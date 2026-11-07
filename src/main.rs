@@ -3,12 +3,12 @@ use std::sync::Arc;
 use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::json;
-use tmstore_api::auth;
-use tmstore_api::config::Config;
-use tmstore_api::db;
-use tmstore_api::routes;
-use tmstore_api::storage::Storage;
-use tmstore_api::AppState;
+use lavunio_api::auth;
+use lavunio_api::config::Config;
+use lavunio_api::db;
+use lavunio_api::routes;
+use lavunio_api::storage::Storage;
+use lavunio_api::AppState;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
@@ -21,7 +21,7 @@ async fn main() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,tmstore_api=debug".into()),
+                .unwrap_or_else(|_| "info,lavunio_api=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -46,7 +46,7 @@ async fn main() {
             "/",
             get(|| async {
                 Json(json!({
-                    "name": "TMStore API",
+                    "name": "Lavunio API",
                     "version": env!("CARGO_PKG_VERSION"),
                     "docs": "/v1/health"
                 }))
@@ -62,6 +62,6 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(&address)
         .await
         .unwrap_or_else(|error| panic!("failed to bind {address}: {error}"));
-    tracing::info!("TMStore API listening on http://{address}");
+    tracing::info!("Lavunio API listening on http://{address}");
     axum::serve(listener, app).await.expect("API server failed");
 }

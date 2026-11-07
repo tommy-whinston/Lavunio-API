@@ -5,11 +5,11 @@ use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use tmstore_api::config::Config;
-use tmstore_api::db;
+use lavunio_api::config::Config;
+use lavunio_api::db;
 
 const CATALOG_BASE: &str =
-    "https://raw.githubusercontent.com/tommy-whinston/TMStore-Catalog/main/modes";
+    "https://raw.githubusercontent.com/tommy-whinston/Lavunio-Catalog/main/modes";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -108,7 +108,7 @@ async fn seed_mode(
         let Some(name) = tag.as_str() else {
             continue;
         };
-        let tag_slug = tmstore_api::slugify(name);
+        let tag_slug = lavunio_api::slugify(name);
         if tag_slug.is_empty() {
             continue;
         }
