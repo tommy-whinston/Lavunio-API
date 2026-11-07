@@ -122,4 +122,9 @@ seed/
 - Добавить Ely.by-авторизацию игроков.
 - Добавить отзывы, жалобы, подписки и библиотеку.
 - Подключить лаунчер к API вместо GitHub-каталога.
-- Добавить CI и интеграционные тесты с PostgreSQL.
+- Добавить интеграционные тесты с PostgreSQL.
+
+## Планы
+
+- Аккаунты Lavunio и провайдеры скинов: [docs/ACCOUNTS.md](https://github.com/tommy-whinston/Lavunio/blob/main/docs/ACCOUNTS.md)
+- Встроенный публикатор в лаунчере: [docs/PUBLISHER.md](https://github.com/tommy-whinston/Lavunio/blob/main/docs/PUBLISHER.md)
