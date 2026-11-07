@@ -10,7 +10,8 @@ use crate::auth::{self, AuthUser};
 use crate::error::ApiError;
 use crate::models::{
     Asset, CompleteAssetRequest, CreateModeRequest, CreateModeResponse, CreateReleaseRequest,
-    CreateReleaseResponse, SimpleStatus, UploadUrlRequest, UploadUrlResponse,
+    CreateReleaseResponse, PublisherMode, PublisherModeRow, Release, SimpleStatus,
+    UploadUrlRequest, UploadUrlResponse,
 };
 use crate::storage::{Storage, StorageKind};
 use crate::AppState;
@@ -166,6 +167,76 @@ pub async fn create_mode(
     }))
 }
 
+pub async fn my_modes(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<PublisherMode>>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    ensure_author(&user)?;
+
+    let rows = sqlx::query_as::<_, PublisherModeRow>(
+        r#"
+        SELECT id, slug, title, short_description, description, status, cover_url,
+               mc_version, loader, loader_version, size_label, created_at, updated_at
+        FROM modes
+        WHERE author_id = $1
+        ORDER BY updated_at DESC
+        "#,
+    )
+    .bind(user.id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mut items = Vec::with_capacity(rows.len());
+    for row in rows {
+        let mut releases = sqlx::query_as::<_, Release>(
+            r#"
+            SELECT id, version, status, channel, changelog, published_at, created_at
+            FROM releases
+            WHERE mode_id = $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(row.id)
+        .fetch_all(&state.pool)
+        .await?;
+
+        for release in &mut releases {
+            release.assets = sqlx::query_as::<_, Asset>(
+                r#"
+                SELECT id, kind, url, size, sha256, parts, manifest, file_name, storage_key,
+                       storage_kind
+                FROM release_assets
+                WHERE release_id = $1
+                ORDER BY created_at
+                "#,
+            )
+            .bind(release.id)
+            .fetch_all(&state.pool)
+            .await?;
+        }
+
+        items.push(PublisherMode {
+            id: row.id,
+            slug: row.slug,
+            title: row.title,
+            short_description: row.short_description,
+            description: row.description,
+            status: row.status,
+            cover_url: row.cover_url,
+            mc_version: row.mc_version,
+            loader: row.loader,
+            loader_version: row.loader_version,
+            size: row.size_label,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            releases,
+        });
+    }
+
+    Ok(Json(items))
+}
+
 pub async fn create_release(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -280,8 +351,8 @@ pub async fn upload_url(
     sqlx::query(
         r#"
         INSERT INTO release_assets
-            (id, release_id, kind, url, size, sha256, file_name, storage_key, storage_kind)
-        VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8)
+            (id, release_id, kind, url, size, sha256, manifest, file_name, storage_key, storage_kind)
+        VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8, $9)
         "#,
     )
     .bind(asset_id)
@@ -289,6 +360,7 @@ pub async fn upload_url(
     .bind(kind)
     .bind(body.size.max(0))
     .bind(&body.sha256)
+    .bind(&body.manifest)
     .bind(body.file_name.trim())
     .bind(&storage_key)
     .bind(storage_kind.as_str())

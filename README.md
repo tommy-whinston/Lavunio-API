@@ -23,9 +23,10 @@
 - `GET /v1/modes/{slug}` — карточка режима.
 - `GET /v1/modes/{slug}/releases` — опубликованные релизы с файлами.
 - `GET /v1/authors/{slug}` — профиль автора и его режимы.
+- `GET /v1/publisher/modes` — режимы текущего автора с релизами и файлами.
 - `POST /v1/publisher/modes` — создать черновик режима.
 - `POST /v1/publisher/modes/{id}/releases` — создать черновик релиза.
-- `POST /v1/publisher/releases/{id}/assets/upload-url` — получить URL для загрузки файла (local или S3/R2 pre-signed).
+- `POST /v1/publisher/releases/{id}/assets/upload-url` — получить URL для загрузки файла (local или S3/R2 pre-signed); принимает манифест сборки.
 - `PUT /v1/publisher/releases/{release_id}/assets/{asset_id}/upload` — загрузить файл через API (local storage).
 - `POST /v1/publisher/releases/{release_id}/assets/{asset_id}/complete` — подтвердить загрузку в S3/R2.
 - `POST /v1/publisher/releases/{id}/submit` — отправить релиз на модерацию.

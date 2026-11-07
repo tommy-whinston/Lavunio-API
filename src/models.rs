@@ -165,6 +165,7 @@ pub struct UploadUrlRequest {
     #[serde(default)]
     pub size: i64,
     pub sha256: Option<String>,
+    pub manifest: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -225,6 +226,42 @@ pub struct ModerationItem {
     pub mode_title: String,
     pub author_name: String,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct PublisherModeRow {
+    pub id: Uuid,
+    pub slug: String,
+    pub title: String,
+    pub short_description: String,
+    pub description: String,
+    pub status: String,
+    pub cover_url: Option<String>,
+    pub mc_version: String,
+    pub loader: String,
+    pub loader_version: Option<String>,
+    pub size_label: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublisherMode {
+    pub id: Uuid,
+    pub slug: String,
+    pub title: String,
+    pub short_description: String,
+    pub description: String,
+    pub status: String,
+    pub cover_url: Option<String>,
+    pub mc_version: String,
+    pub loader: String,
+    pub loader_version: Option<String>,
+    pub size: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub releases: Vec<Release>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

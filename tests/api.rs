@@ -207,7 +207,21 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
         Some(json!({
             "kind": "archive",
             "fileName": "build.zip",
-            "size": 11
+            "size": 11,
+            "manifest": {
+                "version": "0.1.0",
+                "files": {
+                    "mods/test.jar": { "sha256": "abc", "size": 11 }
+                },
+                "archive": {
+                    "path": "build.zip",
+                    "size": 11,
+                    "sha256": null,
+                    "files": 1,
+                    "bytes": 11,
+                    "parts": []
+                }
+            }
         })),
     )
     .await;
@@ -228,6 +242,7 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK, "{asset}");
     assert_eq!(asset["size"], 11);
+    assert_eq!(asset["manifest"]["files"]["mods/test.jar"]["size"], 11);
     assert!(asset["url"].as_str().unwrap().contains("/uploads/"));
 
     let (status, submitted) = send(
@@ -263,10 +278,28 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
     assert_eq!(status, StatusCode::OK, "{approved}");
     assert_eq!(approved["status"], "published");
 
-    let (status, catalog) = send(app, Method::GET, "/v1/catalog?q=API%20Test", None, None).await;
+    let (status, catalog) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/catalog?q=API%20Test",
+        None,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{catalog}");
     assert_eq!(catalog["total"], 1);
     assert_eq!(catalog["items"][0]["slug"], "api-test");
+
+    let (status, mine) = send(app, Method::GET, "/v1/publisher/modes", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK, "{mine}");
+    assert_eq!(mine.as_array().unwrap().len(), 1);
+    assert_eq!(mine[0]["slug"], "api-test");
+    assert_eq!(mine[0]["releases"][0]["version"], "0.1.0");
+    assert_eq!(mine[0]["releases"][0]["status"], "published");
+    assert_eq!(
+        mine[0]["releases"][0]["assets"][0]["manifest"]["files"]["mods/test.jar"]["size"],
+        11
+    );
 }
 
 #[sqlx::test]
@@ -277,7 +310,7 @@ async fn players_cannot_create_modes(pool: PgPool) {
     let app = app(state);
 
     let (status, body) = send(
-        app,
+        app.clone(),
         Method::POST,
         "/v1/publisher/modes",
         Some(&token),
@@ -288,5 +321,8 @@ async fn players_cannot_create_modes(pool: PgPool) {
     )
     .await;
 
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+    let (status, body) = send(app, Method::GET, "/v1/publisher/modes", Some(&token), None).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
 }

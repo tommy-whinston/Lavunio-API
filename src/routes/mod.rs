@@ -30,7 +30,10 @@ pub fn router() -> Router<AppState> {
         .route("/v1/modes/{slug}", get(catalog::mode_detail))
         .route("/v1/modes/{slug}/releases", get(catalog::releases))
         .route("/v1/authors/{slug}", get(catalog::author))
-        .route("/v1/publisher/modes", post(publisher::create_mode))
+        .route(
+            "/v1/publisher/modes",
+            get(publisher::my_modes).post(publisher::create_mode),
+        )
         .route(
             "/v1/publisher/modes/{id}/releases",
             post(publisher::create_release),
