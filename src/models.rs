@@ -30,6 +30,10 @@ pub struct ModeRow {
     pub description: String,
     pub status: String,
     pub cover_url: Option<String>,
+    pub mc_version: String,
+    pub loader: String,
+    pub loader_version: Option<String>,
+    pub size_label: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub author_id: Uuid,
@@ -77,6 +81,14 @@ pub struct Release {
     pub assets: Vec<Asset>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildInfo {
+    pub files: u64,
+    pub bytes: u64,
+    pub version: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModeSummary {
@@ -87,9 +99,14 @@ pub struct ModeSummary {
     pub description: String,
     pub status: String,
     pub cover_url: Option<String>,
+    pub mc_version: String,
+    pub loader: String,
+    pub loader_version: Option<String>,
+    pub size: Option<String>,
     pub author: UserSummary,
     pub tags: Vec<Tag>,
     pub latest_release: Option<ReleaseSummary>,
+    pub build: Option<BuildInfo>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -125,6 +142,10 @@ pub struct CreateModeRequest {
     pub cover_url: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    pub mc_version: Option<String>,
+    pub loader: Option<String>,
+    pub loader_version: Option<String>,
+    pub size: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

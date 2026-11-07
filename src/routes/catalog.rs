@@ -1,13 +1,14 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::Deserialize;
+use serde_json::Value;
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::models::{
-    Asset, AuthorResponse, CatalogResponse, ModeRow, ModeSummary, Release, ReleaseSummary, Tag,
-    UserSummary,
+    Asset, AuthorResponse, BuildInfo, CatalogResponse, ModeRow, ModeSummary, Release,
+    ReleaseSummary, Tag, UserSummary,
 };
 use crate::AppState;
 
@@ -25,6 +26,13 @@ struct AuthorRow {
     username: String,
     display_name: String,
     avatar_url: Option<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct BuildRow {
+    size: i64,
+    manifest: Option<Value>,
+    version: String,
 }
 
 async fn tags_for(pool: &PgPool, mode_id: Uuid) -> Result<Vec<Tag>, ApiError> {
@@ -59,9 +67,48 @@ async fn latest_release(pool: &PgPool, mode_id: Uuid) -> Result<Option<ReleaseSu
     Ok(release)
 }
 
+async fn latest_build(pool: &PgPool, mode_id: Uuid) -> Result<Option<BuildInfo>, ApiError> {
+    let row = sqlx::query_as::<_, BuildRow>(
+        r#"
+        SELECT a.size, a.manifest, r.version
+        FROM release_assets a
+        JOIN releases r ON r.id = a.release_id
+        WHERE r.mode_id = $1 AND r.status = 'published' AND a.kind = 'archive'
+        ORDER BY r.published_at DESC NULLS LAST, a.created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(mode_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|row| {
+        let files = row
+            .manifest
+            .as_ref()
+            .and_then(|manifest| manifest.get("files"))
+            .and_then(Value::as_object)
+            .map(|files| files.len() as u64)
+            .unwrap_or(0);
+        let bytes = row
+            .manifest
+            .as_ref()
+            .and_then(|manifest| manifest.get("archive"))
+            .and_then(|archive| archive.get("bytes"))
+            .and_then(Value::as_u64)
+            .unwrap_or(row.size.max(0) as u64);
+        BuildInfo {
+            files,
+            bytes,
+            version: Some(row.version),
+        }
+    }))
+}
+
 async fn mode_summary(pool: &PgPool, row: ModeRow) -> Result<ModeSummary, ApiError> {
     let tags = tags_for(pool, row.id).await?;
     let latest_release = latest_release(pool, row.id).await?;
+    let build = latest_build(pool, row.id).await?;
     Ok(ModeSummary {
         id: row.id,
         slug: row.slug,
@@ -70,6 +117,10 @@ async fn mode_summary(pool: &PgPool, row: ModeRow) -> Result<ModeSummary, ApiErr
         description: row.description,
         status: row.status,
         cover_url: row.cover_url,
+        mc_version: row.mc_version,
+        loader: row.loader,
+        loader_version: row.loader_version,
+        size: row.size_label,
         author: UserSummary {
             id: row.author_id,
             username: row.author_username,
@@ -78,6 +129,7 @@ async fn mode_summary(pool: &PgPool, row: ModeRow) -> Result<ModeSummary, ApiErr
         },
         tags,
         latest_release,
+        build,
         created_at: row.created_at,
         updated_at: row.updated_at,
     })
@@ -87,7 +139,8 @@ async fn mode_row_by_slug(pool: &PgPool, slug: &str) -> Result<ModeRow, ApiError
     sqlx::query_as::<_, ModeRow>(
         r#"
         SELECT m.id, m.slug, m.title, m.short_description, m.description, m.status,
-               m.cover_url, m.created_at, m.updated_at,
+               m.cover_url, m.mc_version, m.loader, m.loader_version, m.size_label,
+               m.created_at, m.updated_at,
                u.id AS author_id, u.username AS author_username,
                u.display_name AS author_name, u.avatar_url AS author_avatar
         FROM modes m
@@ -130,7 +183,8 @@ pub async fn catalog(
     let rows = sqlx::query_as::<_, ModeRow>(
         r#"
         SELECT m.id, m.slug, m.title, m.short_description, m.description, m.status,
-               m.cover_url, m.created_at, m.updated_at,
+               m.cover_url, m.mc_version, m.loader, m.loader_version, m.size_label,
+               m.created_at, m.updated_at,
                u.id AS author_id, u.username AS author_username,
                u.display_name AS author_name, u.avatar_url AS author_avatar
         FROM modes m
@@ -249,7 +303,8 @@ pub async fn author(
     let rows = sqlx::query_as::<_, ModeRow>(
         r#"
         SELECT m.id, m.slug, m.title, m.short_description, m.description, m.status,
-               m.cover_url, m.created_at, m.updated_at,
+               m.cover_url, m.mc_version, m.loader, m.loader_version, m.size_label,
+               m.created_at, m.updated_at,
                u.id AS author_id, u.username AS author_username,
                u.display_name AS author_name, u.avatar_url AS author_avatar
         FROM modes m

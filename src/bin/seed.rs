@@ -68,8 +68,10 @@ async fn seed_mode(
 
     let mode_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO modes (id, slug, title, short_description, description, status, cover_url, author_id)
-        VALUES ($1, $2, $3, $4, $5, 'published', $6, $7)
+        INSERT INTO modes
+            (id, slug, title, short_description, description, status, cover_url, author_id,
+             mc_version, loader, loader_version, size_label)
+        VALUES ($1, $2, $3, $4, $5, 'published', $6, $7, $8, $9, $10, $11)
         ON CONFLICT (slug) DO UPDATE
             SET title = EXCLUDED.title,
                 short_description = EXCLUDED.short_description,
@@ -77,6 +79,10 @@ async fn seed_mode(
                 status = 'published',
                 cover_url = EXCLUDED.cover_url,
                 author_id = EXCLUDED.author_id,
+                mc_version = EXCLUDED.mc_version,
+                loader = EXCLUDED.loader,
+                loader_version = EXCLUDED.loader_version,
+                size_label = EXCLUDED.size_label,
                 updated_at = now()
         RETURNING id
         "#,
@@ -88,6 +94,10 @@ async fn seed_mode(
     .bind(description)
     .bind(cover_url)
     .bind(user_id)
+    .bind(mode["mcVersion"].as_str().unwrap_or_default())
+    .bind(mode["loader"].as_str().unwrap_or("vanilla"))
+    .bind(mode["loaderVersion"].as_str())
+    .bind(mode["size"].as_str())
     .fetch_one(pool)
     .await?;
 

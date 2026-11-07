@@ -110,8 +110,10 @@ pub async fn create_mode(
     let mode_id = Uuid::new_v4();
     let inserted = sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO modes (id, slug, title, short_description, description, status, cover_url, author_id)
-        VALUES ($1, $2, $3, $4, $5, 'draft', $6, $7)
+        INSERT INTO modes
+            (id, slug, title, short_description, description, status, cover_url, author_id,
+             mc_version, loader, loader_version, size_label)
+        VALUES ($1, $2, $3, $4, $5, 'draft', $6, $7, $8, $9, $10, $11)
         RETURNING id
         "#,
     )
@@ -122,6 +124,16 @@ pub async fn create_mode(
     .bind(&body.description)
     .bind(&body.cover_url)
     .bind(user.id)
+    .bind(body.mc_version.unwrap_or_default().trim())
+    .bind(
+        body.loader
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("vanilla"),
+    )
+    .bind(body.loader_version)
+    .bind(body.size)
     .fetch_one(&state.pool)
     .await?;
 
