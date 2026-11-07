@@ -127,4 +127,5 @@ seed/
 ## Планы
 
 - Аккаунты Lavunio и провайдеры скинов: [docs/ACCOUNTS.md](https://github.com/tommy-whinston/Lavunio/blob/main/docs/ACCOUNTS.md)
+- Авторы и команды: [docs/TEAMS.md](https://github.com/tommy-whinston/Lavunio/blob/main/docs/TEAMS.md)
 - Встроенный публикатор в лаунчере: [docs/PUBLISHER.md](https://github.com/tommy-whinston/Lavunio/blob/main/docs/PUBLISHER.md)
