@@ -1,5 +1,7 @@
 # Lavunio API
 
+[![CI](https://github.com/tommy-whinston/Lavunio-API/actions/workflows/ci.yml/badge.svg)](https://github.com/tommy-whinston/Lavunio-API/actions/workflows/ci.yml)
+
 Локальный backend Lavunio: каталог режимов, релизы, авторы, черновики, загрузка файлов и минимальная модерация.
 
 Текущая версия — **MVP для локальной разработки**. Целевая production-схема: PostgreSQL + R2/S3 + CDN.

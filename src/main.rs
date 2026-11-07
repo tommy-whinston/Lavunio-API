@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use axum::routing::get;
 use axum::{Json, Router};
-use serde_json::json;
 use lavunio_api::auth;
 use lavunio_api::config::Config;
 use lavunio_api::db;
 use lavunio_api::routes;
 use lavunio_api::storage::Storage;
 use lavunio_api::AppState;
+use serde_json::json;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
