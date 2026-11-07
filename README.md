@@ -9,6 +9,16 @@
 ## Что уже есть
 
 - `GET /v1/health` — состояние API и базы.
+- `POST /v1/auth/register` — регистрация по email и паролю (Argon2id).
+- `POST /v1/auth/login` — вход, access/refresh-токены.
+- `POST /v1/auth/refresh` — обновление пары токенов.
+- `POST /v1/auth/logout` — отзыв текущей сессии.
+- `POST /v1/auth/verify-email` — подтверждение почты по токену.
+- `POST /v1/auth/verify-email/resend` — повторная отправка подтверждения.
+- `POST /v1/auth/password/forgot` — запрос сброса пароля.
+- `POST /v1/auth/password/reset` — сброс пароля по токену.
+- `GET /v1/me` — профиль текущего аккаунта.
+- `GET /v1/me/identities` — привязанные внешние аккаунты.
 - `GET /v1/catalog` — каталог опубликованных режимов с поиском, тегом и пагинацией.
 - `GET /v1/modes/{slug}` — карточка режима.
 - `GET /v1/modes/{slug}/releases` — опубликованные релизы с файлами.
@@ -78,6 +88,21 @@ curl http://127.0.0.1:8080/v1/modes/night-demon
 Authorization: Bearer <token>
 ```
 
+Подходят и API-токены авторов, и access-токены аккаунтов Lavunio.
+
+## Аккаунты Lavunio
+
+Аккаунты используют email и пароль. Пароли хранятся как Argon2id-хеши, access- и refresh-токены — только в виде SHA-256-хешей в таблице `sessions`.
+
+Для локальной разработки включи `LAVUNIO_DEV_MODE=1`: API вернёт `verificationToken` и `resetToken` в ответах, а также напишет их в лог. В production эти поля не возвращаются — токены должны уходить письмом.
+
+Переменные:
+
+- `LAVUNIO_ACCESS_TTL_SECS` — срок access-токена, по умолчанию 900 секунд.
+- `LAVUNIO_REFRESH_TTL_SECS` — срок refresh-токена, по умолчанию 30 дней.
+- `LAVUNIO_EMAIL_TTL_SECS` — срок подтверждения почты, по умолчанию 24 часа.
+- `LAVUNIO_RESET_TTL_SECS` — срок сброса пароля, по умолчанию 1 час.
+
 ## Тесты
 
 Интеграционные тесты используют PostgreSQL и создают временные БД:
@@ -137,23 +162,28 @@ src/
   lib.rs           общие модули и AppState
   config.rs        переменные окружения
   db.rs            пул PostgreSQL и миграции
-  auth.rs          API-токены, роли, bootstrap
+  auth.rs          API-токены, аккаунты, сессии, пароли
   error.rs         JSON-ошибки
   models.rs        модели API
   storage.rs       локальное хранилище файлов
   routes/
     health.rs
+    auth.rs
     catalog.rs
     publisher.rs
     admin.rs
 migrations/
   0001_init.sql
   0002_storage_keys.sql
+  0003_mode_meta.sql
+  0004_accounts.sql
+  0005_account_links.sql
 seed/
   modes.json
   *.manifest.json
 tests/
   api.rs
+  auth.rs
   storage.rs
 ```
 
@@ -166,10 +196,11 @@ tests/
 
 ## Следующие шаги
 
-- Добавить интеграционные тесты с PostgreSQL.
+- Подключить отправку писем для подтверждения почты и сброса пароля.
+- Добавить rate limit на login/register/reset и список устройств.
 - Добавить Ely.by-авторизацию игроков.
 - Добавить отзывы, жалобы, подписки и библиотеку.
-- Подключить лаунчер к API вместо GitHub-каталога.
+- Подключить аккаунты к лаунчеру.
 
 ## Планы
 

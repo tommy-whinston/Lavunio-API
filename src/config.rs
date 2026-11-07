@@ -20,6 +20,11 @@ pub struct Config {
     pub s3_force_path_style: bool,
     pub s3_presign_expires_secs: u64,
     pub bootstrap_token: Option<String>,
+    pub dev_mode: bool,
+    pub access_token_ttl_secs: u64,
+    pub refresh_token_ttl_secs: u64,
+    pub email_token_ttl_secs: u64,
+    pub reset_token_ttl_secs: u64,
 }
 
 impl Config {
@@ -71,6 +76,11 @@ impl Config {
         let bootstrap_token = env::var("LAVUNIO_BOOTSTRAP_TOKEN")
             .ok()
             .filter(|value| !value.trim().is_empty());
+        let dev_mode = env_bool("LAVUNIO_DEV_MODE", false);
+        let access_token_ttl_secs = env_u64("LAVUNIO_ACCESS_TTL_SECS", 15 * 60);
+        let refresh_token_ttl_secs = env_u64("LAVUNIO_REFRESH_TTL_SECS", 30 * 24 * 60 * 60);
+        let email_token_ttl_secs = env_u64("LAVUNIO_EMAIL_TTL_SECS", 24 * 60 * 60);
+        let reset_token_ttl_secs = env_u64("LAVUNIO_RESET_TTL_SECS", 60 * 60);
 
         Self {
             database_url,
@@ -88,6 +98,11 @@ impl Config {
             s3_force_path_style,
             s3_presign_expires_secs,
             bootstrap_token,
+            dev_mode,
+            access_token_ttl_secs,
+            refresh_token_ttl_secs,
+            email_token_ttl_secs,
+            reset_token_ttl_secs,
         }
     }
 
@@ -108,6 +123,29 @@ impl Config {
             s3_force_path_style: true,
             s3_presign_expires_secs: 3600,
             bootstrap_token: None,
+            dev_mode: true,
+            access_token_ttl_secs: 15 * 60,
+            refresh_token_ttl_secs: 30 * 24 * 60 * 60,
+            email_token_ttl_secs: 24 * 60 * 60,
+            reset_token_ttl_secs: 60 * 60,
         }
     }
+}
+
+fn env_bool(name: &str, default: bool) -> bool {
+    env::var(name)
+        .ok()
+        .map(|value| {
+            let value = value.trim().to_lowercase();
+            matches!(value.as_str(), "1" | "true" | "yes" | "on")
+        })
+        .unwrap_or(default)
+}
+
+fn env_u64(name: &str, default: u64) -> u64 {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
 }

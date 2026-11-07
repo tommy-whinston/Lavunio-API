@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod auth;
 pub mod catalog;
 pub mod health;
 pub mod publisher;
@@ -12,6 +13,19 @@ use crate::AppState;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/v1/health", get(health::health))
+        .route("/v1/auth/register", post(auth::register))
+        .route("/v1/auth/login", post(auth::login))
+        .route("/v1/auth/refresh", post(auth::refresh))
+        .route("/v1/auth/logout", post(auth::logout))
+        .route("/v1/auth/verify-email", post(auth::verify_email))
+        .route(
+            "/v1/auth/verify-email/resend",
+            post(auth::resend_verification),
+        )
+        .route("/v1/auth/password/forgot", post(auth::forgot_password))
+        .route("/v1/auth/password/reset", post(auth::reset_password))
+        .route("/v1/me", get(auth::me))
+        .route("/v1/me/identities", get(auth::identities))
         .route("/v1/catalog", get(catalog::catalog))
         .route("/v1/modes/{slug}", get(catalog::mode_detail))
         .route("/v1/modes/{slug}/releases", get(catalog::releases))
