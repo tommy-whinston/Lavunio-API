@@ -256,7 +256,6 @@ pub async fn revoke_game_sessions(
 
 pub async fn authenticate(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Json(body): Json<AuthenticateRequest>,
 ) -> Response {
     let username = body.username.trim();
