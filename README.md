@@ -193,6 +193,7 @@ tests/
 - `cargo run` — API.
 - `cargo run --bin seed` — импорт текущих режимов.
 - `cargo run --bin token -- <username> <name>` — создать API-токен.
+- `cargo run --bin role -- <email|username> <role>` — выдать роль игрока, автора, модератора или админа.
 - `cargo run --bin migrate_assets` — перенести файлы из GitHub в S3/R2.
 
 ## Следующие шаги
