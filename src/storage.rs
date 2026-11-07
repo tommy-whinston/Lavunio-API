@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
 use aws_sdk_s3::presigning::PresigningConfig;
+use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
 use uuid::Uuid;
 
@@ -174,6 +175,41 @@ impl Storage {
             .await
             .map_err(|error| format!("Не удалось проверить файл в S3: {error}"))?;
         Ok(output.content_length().unwrap_or(0).max(0) as u64)
+    }
+
+    pub async fn put_bytes(
+        &self,
+        key: &str,
+        bytes: &[u8],
+        content_type: Option<&str>,
+    ) -> Result<(), String> {
+        match self {
+            Self::Local(storage) => {
+                let path = storage.dir.join(key);
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent)
+                        .map_err(|error| format!("Не удалось создать папку файлов: {error}"))?;
+                }
+                fs::write(path, bytes)
+                    .map_err(|error| format!("Не удалось сохранить файл: {error}"))
+            }
+            Self::S3(storage) => {
+                let mut request = storage
+                    .client
+                    .put_object()
+                    .bucket(&storage.bucket)
+                    .key(key)
+                    .body(ByteStream::from(bytes.to_vec()));
+                if let Some(content_type) = content_type {
+                    request = request.content_type(content_type);
+                }
+                request
+                    .send()
+                    .await
+                    .map_err(|error| format!("Не удалось загрузить файл в S3: {error}"))?;
+                Ok(())
+            }
+        }
     }
 
     pub fn asset_key(mode_id: Uuid, release_id: Uuid, asset_id: Uuid, file_name: &str) -> String {

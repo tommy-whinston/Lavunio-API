@@ -118,6 +118,17 @@ S3_PRESIGN_EXPIRES_SECS=3600
 
 `docker-compose.yml` содержит MinIO для локальной проверки S3-режима.
 
+## Миграция файлов в S3/R2
+
+Скрипт `migrate_assets` скачивает текущие файлы из GitHub-каталога, загружает их в S3/R2 и обновляет `release_assets`:
+
+```powershell
+# Заполни S3_* в .env и включи STORAGE_KIND=s3
+cargo run --bin migrate_assets
+```
+
+Для split-архивов (`build.zip.001`, `.002`, ...) скрипт загружает все части и записывает публичные URL в `parts`.
+
 ## Структура
 
 ```text
@@ -141,7 +152,17 @@ migrations/
 seed/
   modes.json
   *.manifest.json
+tests/
+  api.rs
+  storage.rs
 ```
+
+## Бинарники
+
+- `cargo run` — API.
+- `cargo run --bin seed` — импорт текущих режимов.
+- `cargo run --bin token -- <username> <name>` — создать API-токен.
+- `cargo run --bin migrate_assets` — перенести файлы из GitHub в S3/R2.
 
 ## Следующие шаги
 

@@ -2,3 +2,6 @@
 /data
 .env
 *.log
+.env.local*
+.env.*.bak
+*.bak
