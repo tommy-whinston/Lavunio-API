@@ -303,6 +303,189 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn moderation_rejects_hides_and_logs_actions(pool: PgPool) {
+    prepare(&pool).await;
+    let (author_id, author_token) = create_user_token(&pool, "mod-author", "author").await;
+    let (_, admin_token) = create_user_token(&pool, "mod-admin", "admin").await;
+
+    let mode_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO modes (id, slug, title, status, author_id) VALUES ($1, 'moderated-mode', 'Moderated Mode', 'pending', $2)",
+    )
+    .bind(mode_id)
+    .bind(author_id)
+    .execute(&pool)
+    .await
+    .expect("mode");
+
+    let release_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO releases (id, mode_id, version, status, changelog) VALUES ($1, $2, '1.0.0', 'pending', 'Need review')",
+    )
+    .bind(release_id)
+    .bind(mode_id)
+    .execute(&pool)
+    .await
+    .expect("release");
+
+    let (state, _dir) = test_state(pool.clone());
+    let app = app(state);
+
+    let (status, queue) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/admin/moderation/queue",
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{queue}");
+    assert_eq!(queue[0]["authorUsername"], "mod-author");
+    assert_eq!(queue[0]["changelog"], "Need review");
+
+    let (status, body) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/admin/moderation/{release_id}/reject"),
+        Some(&admin_token),
+        Some(json!({ "note": "" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
+    let reason = "Сборка падает при запуске";
+    let (status, body) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/admin/moderation/{release_id}/reject"),
+        Some(&admin_token),
+        Some(json!({ "note": reason })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, mine) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/publisher/modes",
+        Some(&author_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{mine}");
+    assert_eq!(mine[0]["status"], "draft");
+    assert_eq!(mine[0]["releases"][0]["rejectionNote"], reason);
+
+    let second_release = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO releases (id, mode_id, version, status, changelog) VALUES ($1, $2, '1.0.1', 'pending', 'Fixed')",
+    )
+    .bind(second_release)
+    .bind(mode_id)
+    .execute(&pool)
+    .await
+    .expect("second release");
+
+    let (status, body) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/admin/moderation/{second_release}/approve"),
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, catalog) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/catalog?q=Moderated",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{catalog}");
+    assert_eq!(catalog["total"], 1);
+
+    let (status, body) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/admin/modes/{mode_id}/hide"),
+        Some(&admin_token),
+        Some(json!({ "note": "Жалоба на контент" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, catalog) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/catalog?q=Moderated",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{catalog}");
+    assert_eq!(catalog["total"], 0);
+
+    let (status, modes) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/admin/modes",
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{modes}");
+    assert_eq!(modes[0]["status"], "hidden");
+
+    let (status, body) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/admin/modes/{mode_id}/unhide"),
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, catalog) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/catalog?q=Moderated",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{catalog}");
+    assert_eq!(catalog["total"], 1);
+
+    let (status, history) = send(
+        app,
+        Method::GET,
+        "/v1/admin/moderation/history?limit=20",
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{history}");
+    let actions: Vec<&str> = history
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["action"].as_str())
+        .collect();
+    for expected in ["reject", "approve", "hide", "unhide"] {
+        assert!(actions.contains(&expected), "missing {expected}: {history}");
+    }
+    assert!(history
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["note"] == reason));
+}
+
+#[sqlx::test]
 async fn players_cannot_create_modes(pool: PgPool) {
     prepare(&pool).await;
     let (_, token) = create_user_token(&pool, "player", "player").await;

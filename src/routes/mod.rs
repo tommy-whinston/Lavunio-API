@@ -87,8 +87,12 @@ pub fn router() -> Router<AppState> {
             post(publisher::submit_release),
         )
         .route("/v1/admin/moderation/queue", get(admin::queue))
+        .route("/v1/admin/moderation/history", get(admin::history))
         .route("/v1/admin/moderation/{id}/approve", post(admin::approve))
         .route("/v1/admin/moderation/{id}/reject", post(admin::reject))
+        .route("/v1/admin/modes", get(admin::modes))
+        .route("/v1/admin/modes/{id}/hide", post(admin::hide_mode))
+        .route("/v1/admin/modes/{id}/unhide", post(admin::unhide_mode))
 }
 
 pub fn validate_slug(value: &str) -> bool {

@@ -77,6 +77,8 @@ pub struct Release {
     pub changelog: String,
     pub published_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    pub rejection_note: Option<String>,
+    pub moderated_at: Option<DateTime<Utc>>,
     #[sqlx(skip)]
     pub assets: Vec<Asset>,
 }
@@ -225,7 +227,34 @@ pub struct ModerationItem {
     pub mode_slug: String,
     pub mode_title: String,
     pub author_name: String,
+    pub author_username: String,
+    pub changelog: String,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct ModerationHistoryItem {
+    pub id: Uuid,
+    pub action: String,
+    pub note: String,
+    pub target_type: String,
+    pub target_id: Uuid,
+    pub moderator_name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminModeItem {
+    pub id: Uuid,
+    pub slug: String,
+    pub title: String,
+    pub status: String,
+    pub author_name: String,
+    pub author_username: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, FromRow)]

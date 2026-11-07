@@ -271,7 +271,8 @@ pub async fn releases(
     let mode = mode_row_by_slug(&state.pool, &slug).await?;
     let mut releases = sqlx::query_as::<_, Release>(
         r#"
-        SELECT id, version, status, channel, changelog, published_at, created_at
+        SELECT id, version, status, channel, changelog, published_at, created_at,
+               rejection_note, moderated_at
         FROM releases
         WHERE mode_id = $1 AND status = 'published'
         ORDER BY published_at DESC NULLS LAST, created_at DESC

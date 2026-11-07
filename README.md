@@ -36,7 +36,11 @@
 - `POST /v1/publisher/releases/{id}/submit` — отправить релиз на модерацию.
 - `GET /v1/admin/moderation/queue` — очередь модерации.
 - `POST /v1/admin/moderation/{id}/approve` — одобрить релиз.
-- `POST /v1/admin/moderation/{id}/reject` — отклонить релиз.
+- `POST /v1/admin/moderation/{id}/reject` — отклонить релиз с причиной.
+- `GET /v1/admin/moderation/history` — журнал действий модераторов.
+- `GET /v1/admin/modes` — все режимы для админки.
+- `POST /v1/admin/modes/{id}/hide` — скрыть режим с причиной.
+- `POST /v1/admin/modes/{id}/unhide` — вернуть режим в каталог.
 - Seed-скрипт для переноса `night-demon` и `eclipse`.
 - CLI для создания API-токенов.
 

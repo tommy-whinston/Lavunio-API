@@ -191,7 +191,8 @@ pub async fn my_modes(
     for row in rows {
         let mut releases = sqlx::query_as::<_, Release>(
             r#"
-            SELECT id, version, status, channel, changelog, published_at, created_at
+            SELECT id, version, status, channel, changelog, published_at, created_at,
+                   rejection_note, moderated_at
             FROM releases
             WHERE mode_id = $1
             ORDER BY created_at DESC
