@@ -17,11 +17,7 @@ fn test_state(pool: PgPool) -> (AppState, tempfile::TempDir) {
     let config = Config::local(String::new(), dir.path().to_path_buf());
     let storage = Storage::new(&config).expect("local storage");
     (
-        AppState {
-            config: Arc::new(config),
-            pool,
-            storage: Arc::new(storage),
-        },
+        AppState::new(Arc::new(config), pool, Arc::new(storage)),
         dir,
     )
 }
@@ -362,6 +358,53 @@ async fn resend_verification_invalidates_previous_token(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK, "{again}");
     assert!(again.get("verificationToken").is_none());
+}
+
+#[sqlx::test]
+async fn login_rate_limit_blocks_bruteforce(pool: PgPool) {
+    let dir = tempfile::tempdir().expect("temp storage");
+    let mut config = Config::local(String::new(), dir.path().to_path_buf());
+    config.rate_limit_enabled = true;
+    config.rate_limit_window_secs = 60;
+    config.rate_limit_login = 2;
+    config.rate_limit_register = 100;
+    let storage = Storage::new(&config).expect("local storage");
+    let state = AppState::new(Arc::new(config), pool, Arc::new(storage));
+    let app = app(state);
+
+    register(&app, "ratelimit@example.com", "ratelimit", "password 123").await;
+
+    for attempt in 0..2 {
+        let (status, body) = send(
+            app.clone(),
+            Method::POST,
+            "/v1/auth/login",
+            None,
+            Some(json!({
+                "email": "ratelimit@example.com",
+                "password": "wrong password"
+            })),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "attempt {attempt}: {body}"
+        );
+    }
+
+    let (status, body) = send(
+        app,
+        Method::POST,
+        "/v1/auth/login",
+        None,
+        Some(json!({
+            "email": "ratelimit@example.com",
+            "password": "password 123"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
 }
 
 #[sqlx::test]

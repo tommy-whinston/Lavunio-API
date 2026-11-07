@@ -287,12 +287,8 @@ pub async fn require_admin(pool: &PgPool, headers: &HeaderMap) -> Result<AuthUse
     Ok(user)
 }
 
-pub fn session_metadata(headers: &HeaderMap) -> (Option<String>, Option<String>) {
-    let user_agent = headers
-        .get(USER_AGENT)
-        .and_then(|value| value.to_str().ok())
-        .map(|value| value.chars().take(512).collect::<String>());
-    let ip = headers
+pub fn client_ip(headers: &HeaderMap) -> Option<String> {
+    headers
         .get("x-forwarded-for")
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.split(',').next())
@@ -306,7 +302,15 @@ pub fn session_metadata(headers: &HeaderMap) -> (Option<String>, Option<String>)
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(str::to_string)
-        });
+        })
+}
+
+pub fn session_metadata(headers: &HeaderMap) -> (Option<String>, Option<String>) {
+    let user_agent = headers
+        .get(USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.chars().take(512).collect::<String>());
+    let ip = client_ip(headers);
     (user_agent, ip)
 }
 

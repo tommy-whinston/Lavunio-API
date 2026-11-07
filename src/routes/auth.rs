@@ -12,6 +12,7 @@ use crate::models::{
     LoginRequest, LogoutRequest, RefreshRequest, RegisterRequest, RegisterResponse,
     ResetPasswordRequest, SimpleStatus, VerificationResponse, VerifyEmailRequest,
 };
+use crate::rate_limit::Bucket;
 use crate::AppState;
 
 const MAX_TTL_SECS: u64 = 365 * 24 * 60 * 60;
@@ -61,6 +62,9 @@ pub async fn register(
     headers: HeaderMap,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<RegisterResponse>, ApiError> {
+    let ip = auth::client_ip(&headers).unwrap_or_else(|| "unknown".to_string());
+    state.rate_limiter.check(Bucket::Register, &ip)?;
+
     let email = auth::normalize_email(&body.email);
     if !auth::validate_email(&email) {
         return Err(ApiError::BadRequest("Укажите корректный email".to_string()));
@@ -222,6 +226,7 @@ pub async fn login(
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, ApiError> {
     let email = auth::normalize_email(&body.email);
+    state.rate_limiter.check(Bucket::Login, &email)?;
     let row = sqlx::query_as::<_, LoginRow>(
         r#"
         SELECT id, username, display_name, email, email_verified_at, avatar_url, role,
@@ -446,8 +451,11 @@ pub async fn resend_verification(
 
 pub async fn forgot_password(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<ForgotPasswordRequest>,
 ) -> Result<Json<ForgotPasswordResponse>, ApiError> {
+    let ip = auth::client_ip(&headers).unwrap_or_else(|| "unknown".to_string());
+    state.rate_limiter.check(Bucket::Reset, &ip)?;
     let email = auth::normalize_email(&body.email);
     let user =
         sqlx::query_as::<_, (Uuid, String)>("SELECT id, email FROM users WHERE lower(email) = $1")
@@ -501,8 +509,11 @@ pub async fn forgot_password(
 
 pub async fn reset_password(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<ResetPasswordRequest>,
 ) -> Result<Json<SimpleStatus>, ApiError> {
+    let ip = auth::client_ip(&headers).unwrap_or_else(|| "unknown".to_string());
+    state.rate_limiter.check(Bucket::Reset, &ip)?;
     let token = body.token.trim();
     if token.is_empty() {
         return Err(ApiError::BadRequest("Нужен токен".to_string()));

@@ -15,6 +15,7 @@ use uuid::Uuid;
 use crate::auth;
 use crate::error::ApiError;
 use crate::models::{AccountUser, GameProfile, GameSessionResponse};
+use crate::rate_limit::Bucket;
 use crate::AppState;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -255,9 +256,20 @@ pub async fn revoke_game_sessions(
 
 pub async fn authenticate(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<AuthenticateRequest>,
 ) -> Response {
     let username = body.username.trim();
+    if let Err(error) = state
+        .rate_limiter
+        .check(Bucket::Login, &username.to_lowercase())
+    {
+        return ygg_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "ForbiddenOperationException",
+            &error.to_string(),
+        );
+    }
     if username.is_empty() || body.password.is_empty() {
         return illegal("Нужны логин и пароль");
     }
@@ -460,6 +472,16 @@ pub async fn invalidate(State(state): State<AppState>, Json(body): Json<TokenReq
 }
 
 pub async fn signout(State(state): State<AppState>, Json(body): Json<SignoutRequest>) -> Response {
+    if let Err(error) = state
+        .rate_limiter
+        .check(Bucket::Login, &body.username.trim().to_lowercase())
+    {
+        return ygg_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "ForbiddenOperationException",
+            &error.to_string(),
+        );
+    }
     let row = sqlx::query_as::<_, (Uuid, Option<String>)>(
         r#"
         SELECT id, password_hash

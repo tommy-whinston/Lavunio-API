@@ -19,11 +19,7 @@ fn test_state(pool: PgPool) -> (AppState, tempfile::TempDir) {
     let config = Config::local(String::new(), dir.path().to_path_buf());
     let storage = Storage::new(&config).expect("local storage");
     (
-        AppState {
-            config: Arc::new(config),
-            pool,
-            storage: Arc::new(storage),
-        },
+        AppState::new(Arc::new(config), pool, Arc::new(storage)),
         dir,
     )
 }
@@ -121,6 +117,45 @@ async fn send_bytes(
         serde_json::from_slice(&body).unwrap_or(Value::Null)
     };
     (status, value)
+}
+
+async fn send_text(app: Router, uri: &str) -> (StatusCode, String) {
+    let request = Request::builder()
+        .method(Method::GET)
+        .uri(uri)
+        .body(Body::empty())
+        .expect("request");
+    let response = app.oneshot(request).await.expect("request result");
+    let status = response.status();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    (status, String::from_utf8_lossy(&bytes).to_string())
+}
+
+#[sqlx::test]
+async fn health_and_metrics_report_state(pool: PgPool) {
+    prepare(&pool).await;
+    let (state, _dir) = test_state(pool);
+    let app = app(state);
+
+    let (status, health) = send(app.clone(), Method::GET, "/v1/health", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{health}");
+    assert_eq!(health["database"], "ok");
+    assert_eq!(health["storage"], "local");
+    assert!(health["uptimeSeconds"].as_u64().is_some());
+    assert!(health["databaseLatencyMs"].as_u64().is_some());
+    assert!(health["pool"]["size"].as_u64().unwrap_or(0) >= 1);
+
+    let (status, metrics) = send_text(app, "/v1/metrics").await;
+    assert_eq!(status, StatusCode::OK, "{metrics}");
+    assert!(metrics.contains("lavunio_uptime_seconds"));
+    assert!(metrics.contains("lavunio_requests_total"));
+    assert!(metrics.contains("lavunio_db_up 1"));
+    assert!(metrics.contains("lavunio_pending_releases"));
 }
 
 #[sqlx::test]

@@ -19,11 +19,7 @@ fn test_state(pool: PgPool) -> (AppState, tempfile::TempDir) {
     let config = Config::local(String::new(), dir.path().to_path_buf());
     let storage = Storage::new(&config).expect("local storage");
     (
-        AppState {
-            config: Arc::new(config),
-            pool,
-            storage: Arc::new(storage),
-        },
+        AppState::new(Arc::new(config), pool, Arc::new(storage)),
         dir,
     )
 }

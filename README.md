@@ -9,6 +9,7 @@
 ## Что уже есть
 
 - `GET /v1/health` — состояние API и базы.
+- `GET /v1/metrics` — метрики Prometheus: uptime, запросы, ошибки, БД, очередь модерации.
 - `POST /v1/auth/register` — регистрация по email и паролю (Argon2id).
 - `POST /v1/auth/login` — вход, access/refresh-токены.
 - `POST /v1/auth/refresh` — обновление пары токенов.
@@ -117,6 +118,13 @@ Authorization: Bearer <token>
 - `LAVUNIO_RESET_TTL_SECS` — срок сброса пароля, по умолчанию 1 час.
 - `LAVUNIO_GAME_TTL_SECS` — срок игровой сессии Minecraft, по умолчанию 30 дней.
 - `SKIN_DOMAINS` — домены, с которых Minecraft может загружать скины (через запятую).
+- `LAVUNIO_RATE_LIMIT_ENABLED` — включить rate limit (по умолчанию `true`).
+- `LAVUNIO_RATE_LIMIT_WINDOW_SECS` — окно rate limit, по умолчанию 900 секунд.
+- `LAVUNIO_RATE_LIMIT_LOGIN` — попыток входа на email/IP за окно, по умолчанию 10.
+- `LAVUNIO_RATE_LIMIT_REGISTER` — регистраций на IP за окно, по умолчанию 10.
+- `LAVUNIO_RATE_LIMIT_RESET` — запросов сброса пароля на IP за окно, по умолчанию 5.
+
+Rate limit хранится в памяти процесса. Для нескольких инстансов API понадобится общий store вроде Redis.
 
 ## Тесты
 
@@ -136,8 +144,51 @@ curl -X POST http://127.0.0.1:8080/v1/publisher/modes `
   -d '{\"slug\":\"my-mode\",\"title\":\"My Mode\",\"shortDescription\":\"Test\",\"tags\":[\"pvp\"]}'
 ```
 
-## Файлы и S3
+## Мониторинг и логи
 
+`GET /v1/health` возвращает статус БД, задержку, uptime, storage и размер пула.
+
+`GET /v1/metrics` отдаёт Prometheus-метрики:
+
+```text
+lavunio_uptime_seconds
+lavunio_requests_total
+lavunio_errors_total
+lavunio_db_up
+lavunio_db_pool_size
+lavunio_db_pool_idle
+lavunio_pending_releases
+```
+
+Каждый HTTP-запрос пишется в лог с полями `method`, `path`, `status`, `latency_ms`.
+
+По умолчанию логи текстовые. Для JSON:
+
+```env
+LOG_FORMAT=json
+```
+
+## Бэкапы PostgreSQL
+
+Скрипты используют `pg_dump` и `pg_restore` из PostgreSQL. Добавь `bin` PostgreSQL в `PATH` или установи PostgreSQL в стандартную папку.
+
+Бэкап:
+
+```powershell
+.\scripts\backup-db.ps1 -KeepDays 7
+```
+
+Файлы сохраняются в `backups/lavunio-YYYYMMDD-HHMMSS.dump`. Старые бэкапы удаляются автоматически.
+
+Восстановление (останови API):
+
+```powershell
+.\scripts\restore-db.ps1 -Dump .\backups\lavunio-20261108-120000.dump
+```
+
+Скрипт использует `--clean --if-exists`, то есть заменяет объекты в целевой базе.
+
+## Файлы и S3
 По умолчанию файлы сохраняются локально в `data/uploads/` и отдаются по `/uploads/{assetId}`.
 
 Для S3/R2:
@@ -181,9 +232,12 @@ src/
   error.rs         JSON-ошибки
   models.rs        модели API
   storage.rs       локальное хранилище файлов
+  rate_limit.rs    rate limit login/register/reset
+  metrics.rs       счётчики запросов и uptime
   routes/
     health.rs
     auth.rs
+    game_auth.rs
     catalog.rs
     publisher.rs
     admin.rs
@@ -193,12 +247,18 @@ migrations/
   0003_mode_meta.sql
   0004_accounts.sql
   0005_account_links.sql
+  0006_skins.sql
+  0007_moderation.sql
 seed/
   modes.json
   *.manifest.json
+scripts/
+  backup-db.ps1
+  restore-db.ps1
 tests/
   api.rs
   auth.rs
+  game_auth.rs
   storage.rs
 ```
 
@@ -213,10 +273,10 @@ tests/
 ## Следующие шаги
 
 - Подключить отправку писем для подтверждения почты и сброса пароля.
-- Добавить rate limit на login/register/reset и список устройств.
+- Добавить внешний алертинг при падении API.
 - Проверить вход в Minecraft через authlib-injector на реальном сервере.
 - Добавить отзывы, жалобы, подписки и библиотеку.
-- Подключить аккаунты к лаунчеру.
+- Подключить аккаунты к магазину и социальным функциям.
 
 ## Планы
 

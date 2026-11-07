@@ -1,5 +1,6 @@
 /target
 /data
+/backups
 .env
 *.log
 .env.local*

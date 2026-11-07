@@ -27,6 +27,11 @@ pub struct Config {
     pub reset_token_ttl_secs: u64,
     pub game_token_ttl_secs: u64,
     pub skin_domains: Vec<String>,
+    pub rate_limit_enabled: bool,
+    pub rate_limit_window_secs: u64,
+    pub rate_limit_login: u32,
+    pub rate_limit_register: u32,
+    pub rate_limit_reset: u32,
 }
 
 impl Config {
@@ -86,6 +91,11 @@ impl Config {
         let game_token_ttl_secs = env_u64("LAVUNIO_GAME_TTL_SECS", 30 * 24 * 60 * 60);
         let skin_domains =
             env_list("SKIN_DOMAINS").unwrap_or_else(|| default_skin_domains(&public_base_url));
+        let rate_limit_enabled = env_bool("LAVUNIO_RATE_LIMIT_ENABLED", true);
+        let rate_limit_window_secs = env_u64("LAVUNIO_RATE_LIMIT_WINDOW_SECS", 15 * 60);
+        let rate_limit_login = env_u32("LAVUNIO_RATE_LIMIT_LOGIN", 10);
+        let rate_limit_register = env_u32("LAVUNIO_RATE_LIMIT_REGISTER", 10);
+        let rate_limit_reset = env_u32("LAVUNIO_RATE_LIMIT_RESET", 5);
 
         Self {
             database_url,
@@ -110,6 +120,11 @@ impl Config {
             reset_token_ttl_secs,
             game_token_ttl_secs,
             skin_domains,
+            rate_limit_enabled,
+            rate_limit_window_secs,
+            rate_limit_login,
+            rate_limit_register,
+            rate_limit_reset,
         }
     }
 
@@ -137,6 +152,11 @@ impl Config {
             reset_token_ttl_secs: 60 * 60,
             game_token_ttl_secs: 30 * 24 * 60 * 60,
             skin_domains: vec!["127.0.0.1".to_string(), "localhost".to_string()],
+            rate_limit_enabled: false,
+            rate_limit_window_secs: 15 * 60,
+            rate_limit_login: 1000,
+            rate_limit_register: 1000,
+            rate_limit_reset: 1000,
         }
     }
 }
@@ -185,5 +205,12 @@ fn env_u64(name: &str, default: u64) -> u64 {
         .ok()
         .and_then(|value| value.trim().parse::<u64>().ok())
         .filter(|value| *value > 0)
+        .unwrap_or(default)
+}
+
+fn env_u32(name: &str, default: u32) -> u32 {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok())
         .unwrap_or(default)
 }
