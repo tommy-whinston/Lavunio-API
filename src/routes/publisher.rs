@@ -1,0 +1,365 @@
+use axum::body::Bytes;
+use axum::extract::{Path, State};
+use axum::http::HeaderMap;
+use axum::Json;
+use sha2::{Digest, Sha256};
+use sqlx::{FromRow, PgPool};
+use uuid::Uuid;
+
+use crate::auth::{self, AuthUser};
+use crate::error::ApiError;
+use crate::models::{
+    Asset, CreateModeRequest, CreateModeResponse, CreateReleaseRequest, CreateReleaseResponse,
+    SimpleStatus, UploadUrlRequest, UploadUrlResponse,
+};
+use crate::AppState;
+
+#[derive(Debug, FromRow)]
+struct ReleaseOwnerRow {
+    author_id: Uuid,
+    mode_id: Uuid,
+    status: String,
+}
+
+#[derive(Debug, FromRow)]
+struct AssetUploadRow {
+    author_id: Uuid,
+    status: String,
+    size: i64,
+    sha256: Option<String>,
+}
+
+async fn ensure_owner(user: &AuthUser, author_id: Uuid) -> Result<(), ApiError> {
+    if user.id != author_id && user.role != "admin" {
+        return Err(ApiError::Forbidden(
+            "Можно изменять только свои режимы".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn release_owner(pool: &PgPool, release_id: Uuid) -> Result<ReleaseOwnerRow, ApiError> {
+    sqlx::query_as::<_, ReleaseOwnerRow>(
+        r#"
+        SELECT m.author_id, m.id AS mode_id, r.status
+        FROM releases r
+        JOIN modes m ON m.id = r.mode_id
+        WHERE r.id = $1
+        "#,
+    )
+    .bind(release_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("Релиз не найден".to_string()))
+}
+
+async fn set_tags(pool: &PgPool, mode_id: Uuid, tags: &[String]) -> Result<(), ApiError> {
+    for raw in tags {
+        let name = raw.trim();
+        if name.is_empty() {
+            continue;
+        }
+        let slug = crate::slugify(name);
+        if slug.is_empty() {
+            continue;
+        }
+
+        let tag_id = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            INSERT INTO tags (id, slug, name)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+            RETURNING id
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(&slug)
+        .bind(name)
+        .fetch_one(pool)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO mode_tags (mode_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        )
+        .bind(mode_id)
+        .bind(tag_id)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}
+
+pub async fn create_mode(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CreateModeRequest>,
+) -> Result<Json<CreateModeResponse>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let slug = body.slug.trim().to_lowercase();
+    if !super::validate_slug(&slug) {
+        return Err(ApiError::BadRequest(
+            "slug: только строчные латинские буквы, цифры и дефис".to_string(),
+        ));
+    }
+    if body.title.trim().is_empty() {
+        return Err(ApiError::BadRequest("Укажи название режима".to_string()));
+    }
+
+    let mode_id = Uuid::new_v4();
+    let inserted = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        INSERT INTO modes (id, slug, title, short_description, description, status, cover_url, author_id)
+        VALUES ($1, $2, $3, $4, $5, 'draft', $6, $7)
+        RETURNING id
+        "#,
+    )
+    .bind(mode_id)
+    .bind(&slug)
+    .bind(body.title.trim())
+    .bind(body.short_description.trim())
+    .bind(&body.description)
+    .bind(&body.cover_url)
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO mode_authors (mode_id, user_id, role, sort_order) VALUES ($1, $2, 'author', 0)",
+    )
+    .bind(inserted)
+    .bind(user.id)
+    .execute(&state.pool)
+    .await?;
+
+    set_tags(&state.pool, inserted, &body.tags).await?;
+
+    tracing::info!("publisher {} created mode {}", user.username, slug);
+
+    Ok(Json(CreateModeResponse {
+        id: inserted,
+        slug,
+        status: "draft".to_string(),
+    }))
+}
+
+pub async fn create_release(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(mode_id): Path<Uuid>,
+    Json(body): Json<CreateReleaseRequest>,
+) -> Result<Json<CreateReleaseResponse>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let owner = sqlx::query_scalar::<_, Uuid>("SELECT author_id FROM modes WHERE id = $1")
+        .bind(mode_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("Режим не найден".to_string()))?;
+    ensure_owner(&user, owner).await?;
+
+    let version = body.version.trim();
+    if version.is_empty() || version.len() > 32 {
+        return Err(ApiError::BadRequest(
+            "Укажи корректную версию релиза".to_string(),
+        ));
+    }
+    let channel = body.channel.as_deref().unwrap_or("stable");
+    if channel != "stable" && channel != "beta" {
+        return Err(ApiError::BadRequest("channel: stable или beta".to_string()));
+    }
+
+    let release_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO releases (id, mode_id, version, status, channel, changelog)
+        VALUES ($1, $2, $3, 'draft', $4, $5)
+        "#,
+    )
+    .bind(release_id)
+    .bind(mode_id)
+    .bind(version)
+    .bind(channel)
+    .bind(&body.changelog)
+    .execute(&state.pool)
+    .await?;
+
+    tracing::info!(
+        "publisher {} created release {} for mode {}",
+        user.username,
+        version,
+        mode_id
+    );
+
+    Ok(Json(CreateReleaseResponse {
+        id: release_id,
+        version: version.to_string(),
+        status: "draft".to_string(),
+    }))
+}
+
+pub async fn upload_url(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(release_id): Path<Uuid>,
+    Json(body): Json<UploadUrlRequest>,
+) -> Result<Json<UploadUrlResponse>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let release = release_owner(&state.pool, release_id).await?;
+    ensure_owner(&user, release.author_id).await?;
+    if release.status == "published" {
+        return Err(ApiError::Conflict(
+            "Опубликованный релиз нельзя изменить".to_string(),
+        ));
+    }
+
+    let kind = body.kind.trim();
+    if !matches!(
+        kind,
+        "archive" | "cover" | "manifest" | "screenshot" | "other"
+    ) {
+        return Err(ApiError::BadRequest("Неизвестный тип файла".to_string()));
+    }
+    if body.file_name.trim().is_empty() {
+        return Err(ApiError::BadRequest("Укажи имя файла".to_string()));
+    }
+
+    let asset_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO release_assets (id, release_id, kind, url, size, sha256)
+        VALUES ($1, $2, $3, '', $4, $5)
+        "#,
+    )
+    .bind(asset_id)
+    .bind(release_id)
+    .bind(kind)
+    .bind(body.size.max(0))
+    .bind(&body.sha256)
+    .execute(&state.pool)
+    .await?;
+
+    let upload_url = format!(
+        "{}/v1/publisher/releases/{}/assets/{}/upload",
+        state.config.public_base_url.trim_end_matches('/'),
+        release_id,
+        asset_id
+    );
+
+    Ok(Json(UploadUrlResponse {
+        asset_id,
+        upload_url,
+        method: "PUT",
+    }))
+}
+
+pub async fn upload_asset(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((release_id, asset_id)): Path<(Uuid, Uuid)>,
+    bytes: Bytes,
+) -> Result<Json<Asset>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let asset = sqlx::query_as::<_, AssetUploadRow>(
+        r#"
+        SELECT m.author_id, r.status, a.size, a.sha256
+        FROM release_assets a
+        JOIN releases r ON r.id = a.release_id
+        JOIN modes m ON m.id = r.mode_id
+        WHERE a.id = $1 AND a.release_id = $2
+        "#,
+    )
+    .bind(asset_id)
+    .bind(release_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("Файл не найден".to_string()))?;
+
+    ensure_owner(&user, asset.author_id).await?;
+    if asset.status == "published" {
+        return Err(ApiError::Conflict(
+            "Опубликованный релиз нельзя изменить".to_string(),
+        ));
+    }
+    if asset.size > 0 && bytes.len() as i64 != asset.size {
+        return Err(ApiError::BadRequest(format!(
+            "Размер файла не совпадает: ожидалось {}, получено {}",
+            asset.size,
+            bytes.len()
+        )));
+    }
+
+    let sha256 = hex::encode(Sha256::digest(&bytes));
+    if let Some(expected) = asset.sha256.as_deref() {
+        if !expected.eq_ignore_ascii_case(&sha256) {
+            return Err(ApiError::BadRequest(
+                "sha256 файла не совпадает".to_string(),
+            ));
+        }
+    }
+
+    state.storage.ensure_dir().map_err(ApiError::Internal)?;
+    let path = state.storage.path_for(asset_id);
+    tokio::fs::write(&path, &bytes)
+        .await
+        .map_err(|error| ApiError::Internal(format!("Не удалось сохранить файл: {error}")))?;
+
+    let url = state.storage.url_for(asset_id);
+    sqlx::query("UPDATE release_assets SET url = $1, size = $2, sha256 = $3 WHERE id = $4")
+        .bind(&url)
+        .bind(bytes.len() as i64)
+        .bind(&sha256)
+        .bind(asset_id)
+        .execute(&state.pool)
+        .await?;
+
+    let updated = sqlx::query_as::<_, Asset>(
+        "SELECT id, kind, url, size, sha256, parts, manifest FROM release_assets WHERE id = $1",
+    )
+    .bind(asset_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(updated))
+}
+
+pub async fn submit_release(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(release_id): Path<Uuid>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let release = release_owner(&state.pool, release_id).await?;
+    ensure_owner(&user, release.author_id).await?;
+    if release.status != "draft" {
+        return Err(ApiError::BadRequest(
+            "На модерацию можно отправить только черновик".to_string(),
+        ));
+    }
+
+    let archives = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM release_assets WHERE release_id = $1 AND kind = 'archive' AND url <> ''",
+    )
+    .bind(release_id)
+    .fetch_one(&state.pool)
+    .await?;
+    if archives == 0 {
+        return Err(ApiError::BadRequest(
+            "Сначала загрузи сборку режима".to_string(),
+        ));
+    }
+
+    sqlx::query("UPDATE releases SET status = 'pending' WHERE id = $1")
+        .bind(release_id)
+        .execute(&state.pool)
+        .await?;
+    sqlx::query("UPDATE modes SET status = 'pending', updated_at = now() WHERE id = $1")
+        .bind(release.mode_id)
+        .execute(&state.pool)
+        .await?;
+
+    tracing::info!("release {} submitted for moderation", release_id);
+
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "pending".to_string(),
+    }))
+}

@@ -1,0 +1,226 @@
+{
+  "mode": "night-demon",
+  "version": "1.0.0",
+  "generatedAt": "2026-11-06T13:08:58.630Z",
+  "archive": {
+    "path": "build.zip",
+    "size": 23024495,
+    "sha256": "eb31cb8a3cae3d791ff06448733c1f0c4b20cda96f7f08f100ee8d9e4f6434c1",
+    "files": 53,
+    "bytes": 60602920
+  },
+  "files": {
+    "mods/CTM-MC1.12.2-1.0.2.31.jar": {
+      "sha256": "433f441dc9c0aa75a4168df832900720ddadac1f22cc3bba4e4f25ca789b268b",
+      "size": 199045
+    },
+    "mods/Chisel-MC1.12.2-1.0.2.45.jar": {
+      "sha256": "64c62f20a89939db2c03d47737c7bd371d8bd8c10ae42e2e8c63432ae89db2c7",
+      "size": 4755282
+    },
+    "mods/ChiselAndBits.jar": {
+      "sha256": "b31715e38bc3521ec8d518d1fdb6100290cb80f985e0b41f74edb8506625de2c",
+      "size": 735102
+    },
+    "mods/FishsUndeadRising-1.12.2-1.3.0.jar": {
+      "sha256": "07fda9ba56f0d2a34db39de11045bcf8bf4471ac43fe1e2960a466809356d38f",
+      "size": 4651482
+    },
+    "mods/ModularVoiceChat_1.1.1_LAST.jar": {
+      "sha256": "e8b64d37fd83c9439c4659d6e2163c90949030f450e5a606f87d4cf756861dca",
+      "size": 2130556
+    },
+    "mods/NIGHTTIMER.jar": {
+      "sha256": "c185743228be3261b4cfefb398bdd5614d2a6b3b51c9696b25b396eef61b7838",
+      "size": 758327
+    },
+    "mods/blockbuster-2.3-dev8-1.12.2.jar": {
+      "sha256": "87ee4ad65bbf3259ec78e08dd593e97d5bffc43f34b788800bee82a5bd8900f0",
+      "size": 1449871
+    },
+    "mods/mclib-2.3-dev8-1.12.2.jar": {
+      "sha256": "c911ea0ad999c04fecfa41f19b60e6b896b83f00e7f5256779c1a940105f8963",
+      "size": 563749
+    },
+    "mods/metamorph-1.2.7-dev5-1.12.2.jar": {
+      "sha256": "68fe16947ff1d29efe8e47fee6afb589ee861d1bf4b9c7a2a7d8ba4c8bd110df",
+      "size": 372962
+    },
+    "mods/nightcreator.jar": {
+      "sha256": "23bfd71d1f354edad2516fdb70859ac64cebf4256402ce51b8dc85a708dfefa3",
+      "size": 840452
+    },
+    "resourcepacks/TM Pack.zip": {
+      "sha256": "893babbb6c2e2836312989e0c8583933f843949216f4c7dce03f0bbb1ee17144",
+      "size": 2320254
+    },
+    "saves/world/data/Mineshaft.dat": {
+      "sha256": "9f53c1a4dc05ad4713da9a6efb3ce4f91de38953f5a7faf92084580a58268a4b",
+      "size": 18398
+    },
+    "saves/world/data/Village.dat": {
+      "sha256": "46ebdeb7b3358e5ae783a60228edbde823b2da2757ec3071e74239c70c3c2804",
+      "size": 1287
+    },
+    "saves/world/data/capabilities.dat": {
+      "sha256": "ece263c2d4292a78b928539ff4d5b1a4d6b7a043babda3fbdb74e1f669274972",
+      "size": 32
+    },
+    "saves/world/data/killer_mapvars.dat": {
+      "sha256": "4d833214c608bca2613fa0aab55a53fa7c90ccd79a57b3c6492a88b7f7087189",
+      "size": 42
+    },
+    "saves/world/data/scoreboard.dat": {
+      "sha256": "ae4ecdde7ee54d9b9facbca383a0485651017818e53d1f19e4b01c715745da7e",
+      "size": 1035
+    },
+    "saves/world/data/villages.dat": {
+      "sha256": "2938baf09e728b61d152fda45ba245302f21b78664593f93b0af72a3bcfcf527",
+      "size": 56
+    },
+    "saves/world/data/villages_end.dat": {
+      "sha256": "e09dfb611d6a05d18069b59bdd4ce56d6087576e40336b0f0e4a283429ec1ce6",
+      "size": 56
+    },
+    "saves/world/data/villages_nether.dat": {
+      "sha256": "e09dfb611d6a05d18069b59bdd4ce56d6087576e40336b0f0e4a283429ec1ce6",
+      "size": 56
+    },
+    "saves/world/forcedchunks.dat": {
+      "sha256": "8a1ff1d28cc89befe2b93aec31a800604d46b8e653e6a106d409a240cda20738",
+      "size": 22
+    },
+    "saves/world/icon.png": {
+      "sha256": "b32a231d072cd280e097c45287bb3706960f562b343e2b49c63cbebfc22b89c1",
+      "size": 4791
+    },
+    "saves/world/level.dat": {
+      "sha256": "7a6e622a3536ac4a0c08baf1a9d322f26dd86997a54bad6e3418454dc908a2eb",
+      "size": 20666
+    },
+    "saves/world/level.dat_old": {
+      "sha256": "9a9fd6959938b4f500e20cb2a8d4e7296d6eb1e6049efd5302dcd40a0d728269",
+      "size": 20669
+    },
+    "saves/world/region/r.-1.-1.mca": {
+      "sha256": "76ec62ed70cc1320aa0018037569c366e289def9385d019321828054746ced8b",
+      "size": 2781184
+    },
+    "saves/world/region/r.-1.-2.mca": {
+      "sha256": "bf9fdd6cd5afcae31cc3f3092a32f94860410eccfec1a44d3bbe2233c8e9eb9e",
+      "size": 1323008
+    },
+    "saves/world/region/r.-1.-3.mca": {
+      "sha256": "1b5acc4b99a254996cb19b8b3befbab0c14c2f339bc9b5cc48a38cffeac854fc",
+      "size": 81920
+    },
+    "saves/world/region/r.-1.0.mca": {
+      "sha256": "b93a3a33e986a927d401e57e151c5051ddcf4f20cb1d2949d10822db22fcb208",
+      "size": 3022848
+    },
+    "saves/world/region/r.-1.1.mca": {
+      "sha256": "02eff37d3ad5fa17f4ecac367e1dee7d7abbb74f51a7e5083d1078895cbf1a64",
+      "size": 1523712
+    },
+    "saves/world/region/r.-2.-1.mca": {
+      "sha256": "65f30023fdc4749c415f90d0e24ad874d1cab660165ff8f8c8210ef0467ee505",
+      "size": 2424832
+    },
+    "saves/world/region/r.-2.-2.mca": {
+      "sha256": "b4d8fa94022f10165067cac6cb50bd2ab51b0563f129dcd5153ec3b3b3925359",
+      "size": 32768
+    },
+    "saves/world/region/r.-2.-3.mca": {
+      "sha256": "c9231e75eb65a2733e2600e2b0192601e01edb685b20dd0d16e6cafb7cf44a97",
+      "size": 16384
+    },
+    "saves/world/region/r.-2.0.mca": {
+      "sha256": "1394255b090f5c6b79e6bbdf39d9b2cf6b36162dbbb9626c3bca93e5acd05e62",
+      "size": 2215936
+    },
+    "saves/world/region/r.-2.1.mca": {
+      "sha256": "a630c3ed2383633610e6b570207511cff7dc3ee2b4e914a55a1a5f69abe45ba7",
+      "size": 606208
+    },
+    "saves/world/region/r.0.-1.mca": {
+      "sha256": "5f783891522677e1917c6243b99ce67724b507f257832cd2fe1533c346f9b48b",
+      "size": 4018176
+    },
+    "saves/world/region/r.0.-2.mca": {
+      "sha256": "0148c796b8162685a5caf4056e20296346786cb8d601864a7e8b257e2928b134",
+      "size": 1531904
+    },
+    "saves/world/region/r.0.-3.mca": {
+      "sha256": "dbfc2add11496e01d19d88e8ee01f7258004aebd72650c70ea492a484731c112",
+      "size": 77824
+    },
+    "saves/world/region/r.0.0.mca": {
+      "sha256": "7da23c766e8bc7687d49a1d24e02c781724a4915fa9581c706ec769754d4d86b",
+      "size": 4431872
+    },
+    "saves/world/region/r.0.1.mca": {
+      "sha256": "3ce81183da1893990f6cef2c5d89a87c08db201ddce018fd0344fa687c924489",
+      "size": 2555904
+    },
+    "saves/world/region/r.0.2.mca": {
+      "sha256": "3d0ce54146460785a9e6808d9ec1c59c5f09afaebd051f2afbf3c0c4b658917b",
+      "size": 1720320
+    },
+    "saves/world/region/r.0.3.mca": {
+      "sha256": "4860cc213378a04e407650e7377556784274173b1802cc582a524cd262b32e55",
+      "size": 188416
+    },
+    "saves/world/region/r.1.-1.mca": {
+      "sha256": "f78553c2ef734c602ebce58c6a3bdd3b2dcc5785f600f7d51dc0744444fd6b10",
+      "size": 2289664
+    },
+    "saves/world/region/r.1.-2.mca": {
+      "sha256": "b9f112d4a7f75e2a17e35f7e91bb967f7ae459143f3bda3962ab73a62f5af8fb",
+      "size": 1032192
+    },
+    "saves/world/region/r.1.-3.mca": {
+      "sha256": "6d1240d5342ac216984875e375975ebf09839061f7c69e3444a3abdfb6195ffc",
+      "size": 98304
+    },
+    "saves/world/region/r.1.0.mca": {
+      "sha256": "948df1f4cc38d58bcc071670c073c0bb8815a17616ed2e30114442572525625a",
+      "size": 3649536
+    },
+    "saves/world/region/r.1.1.mca": {
+      "sha256": "c69b2ca165afcee8516138ffa4f354995e447b21a8892f5d0995330ab8cfdde4",
+      "size": 1822720
+    },
+    "saves/world/region/r.19.194.mca": {
+      "sha256": "4f5646c13b86be8540956280c64db1f1fee88d7859b9a99940a94e99d3c030e5",
+      "size": 864256
+    },
+    "saves/world/region/r.19.195.mca": {
+      "sha256": "de91e37ef4b2ef0835f414e799ea9e3c3f4595f7cf91b6e5f4862b2f8d2557f2",
+      "size": 2617344
+    },
+    "saves/world/region/r.2.-1.mca": {
+      "sha256": "5041077a7afa79e8e36d1774548021f4e0e8084697046cf2a61edfb6fee70ab7",
+      "size": 208896
+    },
+    "saves/world/region/r.2.-2.mca": {
+      "sha256": "62191cbbf1908f92880577679df76928c0511b323bd49aaee5dcd1b3c739c34a",
+      "size": 155648
+    },
+    "saves/world/region/r.2.-3.mca": {
+      "sha256": "9cb031c925937f4b582f25fafe6c648300f1d655ebd12d5f8697116ee8ac493b",
+      "size": 16384
+    },
+    "saves/world/region/r.2.0.mca": {
+      "sha256": "ff6c8e20aee456130ba4f6e877ed5f0d633b8f3c7422cc9145aa0849f24aec83",
+      "size": 217088
+    },
+    "saves/world/region/r.2.1.mca": {
+      "sha256": "b757aaaef748141693d6e54219d09c81ba27c4467564c04b19b33cd2b3d3062a",
+      "size": 233472
+    },
+    "saves/world/session.lock": {
+      "sha256": "e9cf30994e30a4115767773fa0abc32e6ed4864052245abeec1487632d5a8039",
+      "size": 8
+    }
+  }
+}
