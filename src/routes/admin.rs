@@ -9,7 +9,8 @@ use crate::auth;
 use crate::error::ApiError;
 use crate::models::{
     AdminCollectionItem, AdminModeItem, AdminReviewItem, CreateCollectionRequest,
-    ModerationHistoryItem, ModerationItem, RejectRequest, ReportItem, SimpleStatus,
+    ModerationHistoryItem, ModerationItem, RejectRequest, ReleaseAppealItem, ReportItem,
+    ResolveAppealRequest, SimpleStatus,
 };
 use crate::AppState;
 
@@ -17,6 +18,14 @@ use crate::AppState;
 struct ReleaseStatusRow {
     mode_id: Uuid,
     status: String,
+}
+
+#[derive(Debug, FromRow)]
+struct AppealRow {
+    release_id: Uuid,
+    status: String,
+    release_status: String,
+    mode_id: Uuid,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -553,6 +562,170 @@ pub async fn reject(
     Ok(Json(SimpleStatus {
         ok: true,
         status: "rejected".to_string(),
+    }))
+}
+
+pub async fn appeals(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<ReleaseAppealItem>>, ApiError> {
+    auth::require_admin(&state.pool, &headers).await?;
+    let items = sqlx::query_as::<_, ReleaseAppealItem>(
+        r#"
+        SELECT a.id, a.release_id, r.version,
+               m.title AS mode_title, m.slug AS mode_slug,
+               u.display_name AS author_name, u.username AS author_username,
+               a.message, r.rejection_note, a.created_at
+        FROM release_appeals a
+        JOIN releases r ON r.id = a.release_id
+        JOIN modes m ON m.id = r.mode_id
+        JOIN users u ON u.id = a.author_id
+        WHERE a.status = 'open'
+        ORDER BY a.created_at
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(items))
+}
+
+pub async fn resolve_appeal(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(appeal_id): Path<Uuid>,
+    Json(body): Json<ResolveAppealRequest>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let admin = auth::require_admin(&state.pool, &headers).await?;
+    let action = body.action.trim();
+    if action != "accept" && action != "reject" {
+        return Err(ApiError::BadRequest(
+            "action: accept или reject".to_string(),
+        ));
+    }
+
+    let mut tx = state.pool.begin().await?;
+    let appeal = sqlx::query_as::<_, AppealRow>(
+        r#"
+        SELECT a.release_id, a.status,
+               r.status AS release_status, r.mode_id
+        FROM release_appeals a
+        JOIN releases r ON r.id = a.release_id
+        WHERE a.id = $1
+        FOR UPDATE OF a
+        "#,
+    )
+    .bind(appeal_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("Апелляция не найдена".to_string()))?;
+
+    if appeal.status != "open" {
+        return Err(ApiError::Conflict(
+            "Апелляция уже рассмотрена".to_string(),
+        ));
+    }
+    if appeal.release_status != "rejected" {
+        return Err(ApiError::BadRequest(
+            "Релиз уже не находится в статусе отклонённого".to_string(),
+        ));
+    }
+
+    let note = body.note.trim();
+    if action == "accept" {
+        sqlx::query(
+            r#"
+            UPDATE releases
+            SET status = 'published',
+                published_at = now(),
+                rejection_note = NULL,
+                moderated_at = now(),
+                moderated_by = $2
+            WHERE id = $1
+            "#,
+        )
+        .bind(appeal.release_id)
+        .bind(admin.id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("UPDATE modes SET status = 'published', updated_at = now() WHERE id = $1")
+            .bind(appeal.mode_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            r#"
+            UPDATE release_appeals
+            SET status = 'accepted', resolution_note = $2,
+                resolved_at = now(), resolved_by = $3
+            WHERE id = $1
+            "#,
+        )
+        .bind(appeal_id)
+        .bind(note)
+        .bind(admin.id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            r#"
+            INSERT INTO moderation_actions (id, moderator_id, target_type, target_id, action, note)
+            VALUES ($1, $2, 'release', $3, 'appeal_accept', $4)
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(admin.id)
+        .bind(appeal.release_id)
+        .bind(note)
+        .execute(&mut *tx)
+        .await?;
+    } else {
+        let note = if note.is_empty() {
+            "Апелляция отклонена"
+        } else {
+            note
+        };
+        sqlx::query(
+            r#"
+            UPDATE release_appeals
+            SET status = 'rejected', resolution_note = $2,
+                resolved_at = now(), resolved_by = $3
+            WHERE id = $1
+            "#,
+        )
+        .bind(appeal_id)
+        .bind(note)
+        .bind(admin.id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            r#"
+            INSERT INTO moderation_actions (id, moderator_id, target_type, target_id, action, note)
+            VALUES ($1, $2, 'release', $3, 'appeal_reject', $4)
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(admin.id)
+        .bind(appeal.release_id)
+        .bind(note)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+
+    let status = if action == "accept" {
+        "published"
+    } else {
+        "rejected"
+    };
+    tracing::info!(
+        "moderator {} resolved appeal {}: {}",
+        admin.username,
+        appeal_id,
+        status
+    );
+
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: status.to_string(),
     }))
 }
 

@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::auth::{self, AuthUser};
 use crate::error::ApiError;
 use crate::models::{
-    Asset, CompleteAssetRequest, CoverResponse, CreateModeRequest, CreateModeResponse,
+    AppealRequest, Asset, CompleteAssetRequest, CoverResponse, CreateModeRequest, CreateModeResponse,
     CreateReleaseRequest, CreateReleaseResponse, ModeEventRequest, PublisherMode, PublisherModeRow,
     PublisherStats, Release, SimpleStatus, UploadUrlRequest, UploadUrlResponse,
 };
@@ -240,7 +240,10 @@ pub async fn my_modes(
         let mut releases = sqlx::query_as::<_, Release>(
             r#"
             SELECT id, version, status, channel, changelog, published_at, created_at,
-                   rejection_note, moderated_at
+                   rejection_note, moderated_at,
+                   (SELECT ap.status FROM release_appeals ap
+                    WHERE ap.release_id = releases.id
+                    ORDER BY ap.created_at DESC LIMIT 1) AS appeal_status
             FROM releases
             WHERE mode_id = $1
             ORDER BY created_at DESC
@@ -672,6 +675,66 @@ pub async fn submit_release(
     Ok(Json(SimpleStatus {
         ok: true,
         status: "pending".to_string(),
+    }))
+}
+
+pub async fn appeal_release(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(release_id): Path<Uuid>,
+    Json(body): Json<AppealRequest>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let release = release_owner(&state.pool, release_id).await?;
+    ensure_owner(&user, release.author_id).await?;
+    if release.status != "rejected" {
+        return Err(ApiError::BadRequest(
+            "Оспорить можно только отклонённый релиз".to_string(),
+        ));
+    }
+
+    let message = body.message.trim();
+    let length = message.chars().count();
+    if !(10..=2000).contains(&length) {
+        return Err(ApiError::BadRequest(
+            "Апелляция должна быть от 10 до 2000 символов".to_string(),
+        ));
+    }
+
+    let open = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM release_appeals WHERE release_id = $1 AND status = 'open')",
+    )
+    .bind(release_id)
+    .fetch_one(&state.pool)
+    .await?;
+    if open {
+        return Err(ApiError::Conflict(
+            "Апелляция по этому релизу уже отправлена".to_string(),
+        ));
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO release_appeals (id, release_id, author_id, message)
+        VALUES ($1, $2, $3, $4)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(release_id)
+    .bind(user.id)
+    .bind(message)
+    .execute(&state.pool)
+    .await?;
+
+    tracing::info!(
+        "author {} appealed release {}",
+        user.username,
+        release_id
+    );
+
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "open".to_string(),
     }))
 }
 

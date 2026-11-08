@@ -80,6 +80,8 @@ pub struct Release {
     pub created_at: DateTime<Utc>,
     pub rejection_note: Option<String>,
     pub moderated_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub appeal_status: Option<String>,
     #[sqlx(skip)]
     pub assets: Vec<Asset>,
 }
@@ -300,6 +302,37 @@ pub struct SimpleStatus {
 pub struct RejectRequest {
     #[serde(default)]
     pub note: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppealRequest {
+    #[serde(default)]
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolveAppealRequest {
+    #[serde(default)]
+    pub action: String,
+    #[serde(default)]
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseAppealItem {
+    pub id: Uuid,
+    pub release_id: Uuid,
+    pub version: String,
+    pub mode_title: String,
+    pub mode_slug: String,
+    pub author_name: String,
+    pub author_username: String,
+    pub message: String,
+    pub rejection_note: Option<String>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, FromRow)]

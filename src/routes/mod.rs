@@ -133,6 +133,10 @@ pub fn router() -> Router<AppState> {
             "/v1/publisher/releases/{id}/submit",
             post(publisher::submit_release),
         )
+        .route(
+            "/v1/publisher/releases/{id}/appeal",
+            post(publisher::appeal_release),
+        )
         .route("/v1/admin/moderation/queue", get(admin::queue))
         .route("/v1/admin/moderation/history", get(admin::history))
         .route(
@@ -151,6 +155,11 @@ pub fn router() -> Router<AppState> {
         .route("/v1/admin/reviews/{id}/reject", post(admin::reject_review))
         .route("/v1/admin/reports", get(admin::reports))
         .route("/v1/admin/reports/{id}/close", post(admin::close_report))
+        .route("/v1/admin/appeals", get(admin::appeals))
+        .route(
+            "/v1/admin/appeals/{id}/resolve",
+            post(admin::resolve_appeal),
+        )
         .route("/v1/admin/moderation/{id}/approve", post(admin::approve))
         .route("/v1/admin/moderation/{id}/reject", post(admin::reject))
         .route("/v1/admin/modes", get(admin::modes))
