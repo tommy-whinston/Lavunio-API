@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::auth;
 use crate::error::ApiError;
 use crate::models::{
-    AdminModeItem, ModerationHistoryItem, ModerationItem, RejectRequest, SimpleStatus,
+    AdminModeItem, ModerationHistoryItem, ModerationItem, RejectRequest, ReportItem, SimpleStatus,
 };
 use crate::AppState;
 
@@ -22,6 +22,12 @@ struct ReleaseStatusRow {
 pub struct HistoryQuery {
     #[serde(default)]
     limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReportsQuery {
+    #[serde(default)]
+    status: Option<String>,
 }
 
 pub async fn queue(
@@ -94,6 +100,77 @@ pub async fn history(
     .await?;
 
     Ok(Json(items))
+}
+
+pub async fn reports(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ReportsQuery>,
+) -> Result<Json<Vec<ReportItem>>, ApiError> {
+    auth::require_admin(&state.pool, &headers).await?;
+    let status = query.status.unwrap_or_else(|| "open".to_string());
+    let status = status.trim().to_string();
+
+    let items = sqlx::query_as::<_, ReportItem>(
+        r#"
+        SELECT r.id, r.target_type, r.target_id, r.reason, r.status,
+               u.display_name AS reporter_name, u.username AS reporter_username,
+               m.title AS target_title, m.slug AS target_slug,
+               r.created_at
+        FROM reports r
+        LEFT JOIN users u ON u.id = r.user_id
+        LEFT JOIN modes m ON m.id = r.target_id AND r.target_type = 'mode'
+        WHERE ($1 = '' OR r.status = $1)
+        ORDER BY r.created_at DESC
+        LIMIT 100
+        "#,
+    )
+    .bind(&status)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(items))
+}
+
+pub async fn close_report(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(report_id): Path<Uuid>,
+    Json(body): Json<RejectRequest>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let admin = auth::require_admin(&state.pool, &headers).await?;
+    let note = body.note.trim();
+
+    let updated =
+        sqlx::query("UPDATE reports SET status = 'closed' WHERE id = $1 AND status <> 'closed'")
+            .bind(report_id)
+            .execute(&state.pool)
+            .await?;
+    if updated.rows_affected() == 0 {
+        return Err(ApiError::NotFound(
+            "Жалоба не найдена или уже закрыта".to_string(),
+        ));
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO moderation_actions (id, moderator_id, target_type, target_id, action, note)
+        VALUES ($1, $2, 'report', $3, 'report_close', $4)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(admin.id)
+    .bind(report_id)
+    .bind(note)
+    .execute(&state.pool)
+    .await?;
+
+    tracing::info!("moderator {} closed report {}", admin.username, report_id);
+
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "closed".to_string(),
+    }))
 }
 
 async fn release_status(

@@ -349,6 +349,27 @@ pub struct ReviewRequest {
     pub text: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportRequest {
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportItem {
+    pub id: Uuid,
+    pub target_type: String,
+    pub target_id: Uuid,
+    pub reason: String,
+    pub status: String,
+    pub reporter_name: Option<String>,
+    pub reporter_username: Option<String>,
+    pub target_title: Option<String>,
+    pub target_slug: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountUser {

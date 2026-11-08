@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::auth;
 use crate::error::ApiError;
-use crate::models::{ReviewItem, ReviewListResponse, ReviewRequest, SimpleStatus};
+use crate::models::{ReportRequest, ReviewItem, ReviewListResponse, ReviewRequest, SimpleStatus};
 use crate::AppState;
 
 #[derive(Debug, FromRow)]
@@ -179,5 +179,39 @@ pub async fn delete_review(
     Ok(Json(SimpleStatus {
         ok: true,
         status: "deleted".to_string(),
+    }))
+}
+
+pub async fn submit_report(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(slug): Path<String>,
+    Json(body): Json<ReportRequest>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let reason = body.reason.trim();
+    if reason.chars().count() < 3 {
+        return Err(ApiError::BadRequest(
+            "Опиши причину жалобы (минимум 3 символа)".to_string(),
+        ));
+    }
+    if reason.chars().count() > 1000 {
+        return Err(ApiError::BadRequest(
+            "Причина жалобы слишком длинная".to_string(),
+        ));
+    }
+    let mode_id = published_mode_id(&state.pool, &slug).await?;
+    sqlx::query(
+        "INSERT INTO reports (id, target_type, target_id, user_id, reason, status) VALUES ($1, 'mode', $2, $3, $4, 'open')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(mode_id)
+    .bind(user.id)
+    .bind(reason)
+    .execute(&state.pool)
+    .await?;
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "reported".to_string(),
     }))
 }

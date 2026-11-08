@@ -667,6 +667,7 @@ async fn wishlist_and_reviews_work(pool: PgPool) {
     let (user_id, token) = create_user_token(&pool, "community-user", "player").await;
     let (_, author_token) = create_user_token(&pool, "community-author", "author").await;
     let (author_id, _) = create_user_token(&pool, "community-author-2", "author").await;
+    let (_, admin_token) = create_user_token(&pool, "community-admin", "admin").await;
 
     sqlx::query(
         "INSERT INTO modes (id, slug, title, description, status, author_id) VALUES ($1, 'community-mode', 'Community Mode', 'Test', 'published', $2)",
@@ -789,6 +790,66 @@ async fn wishlist_and_reviews_work(pool: PgPool) {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{deleted}");
+
+    let (status, report) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/modes/community-mode/reports",
+        Some(&token),
+        Some(json!({ "reason": "Нарушает правила" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{report}");
+
+    let (status, reports) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/admin/reports?status=open",
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{reports}");
+    assert_eq!(reports.as_array().unwrap().len(), 1);
+    assert_eq!(reports[0]["targetSlug"], "community-mode");
+    assert_eq!(reports[0]["reason"], "Нарушает правила");
+    let report_id = reports[0]["id"].as_str().expect("report id");
+
+    let (status, closed) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/admin/reports/{report_id}/close"),
+        Some(&admin_token),
+        Some(json!({ "note": "Проверено" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{closed}");
+
+    let (status, reports) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/admin/reports?status=open",
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{reports}");
+    assert_eq!(reports, json!([]));
+
+    let (status, history) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/admin/moderation/history?limit=20",
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{history}");
+    assert!(history
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["action"] == "report_close"));
 
     let (status, empty) = send(
         app,

@@ -32,6 +32,9 @@
 - `GET /v1/modes/{slug}/reviews` — опубликованные отзывы и средний рейтинг.
 - `POST /v1/modes/{slug}/reviews` — оставить или обновить свой отзыв.
 - `DELETE /v1/me/reviews/{slug}` — удалить свой отзыв.
+- `POST /v1/modes/{slug}/reports` — пожаловаться на режим.
+- `GET /v1/admin/reports?status=open` — очередь жалоб.
+- `POST /v1/admin/reports/{id}/close` — закрыть жалобу.
 - `POST /v1/modes/{slug}/events` — события скачивания, установки и обновления для статистики.
 - `GET /v1/me/wishlist` — список желаемого.
 - `POST /v1/me/wishlist/{slug}` — добавить в список желаемого; `DELETE` — убрать.
