@@ -34,7 +34,8 @@
 - `GET /v1/modes/{slug}` — карточка режима, включая трейлер и скриншоты.
 - `GET /v1/modes/{slug}/releases` — опубликованные релизы с файлами.
 - `GET /v1/modes/{slug}/reviews` — опубликованные отзывы и средний рейтинг.
-- `POST /v1/modes/{slug}/reviews` — оставить или обновить свой отзыв.
+- `POST /v1/modes/{slug}/reviews` — отправить или обновить свой отзыв; публикуется после модерации.
+- `POST /v1/modes/{slug}/reviews/{id}/reply` — ответ автора режима на отзыв.
 - `DELETE /v1/me/reviews/{slug}` — удалить свой отзыв.
 - `POST /v1/modes/{slug}/reports` — пожаловаться на режим.
 - `GET /v1/me/follows` — авторы, на которых подписан игрок.
@@ -42,6 +43,9 @@
 - `GET /v1/me/feed` — последние релизы авторов из подписок.
 - `GET /v1/admin/reports?status=open` — очередь жалоб.
 - `POST /v1/admin/reports/{id}/close` — закрыть жалобу.
+- `GET /v1/admin/reviews?status=pending` — очередь отзывов на модерации.
+- `POST /v1/admin/reviews/{id}/approve` — опубликовать отзыв.
+- `POST /v1/admin/reviews/{id}/reject` — отклонить отзыв.
 - `POST /v1/modes/{slug}/events` — события скачивания, установки и обновления для статистики.
 - `GET /v1/me/wishlist` — список желаемого.
 - `POST /v1/me/wishlist/{slug}` — добавить в список желаемого; `DELETE` — убрать.

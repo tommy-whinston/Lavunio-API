@@ -385,6 +385,8 @@ pub struct ReviewItem {
     pub author_name: String,
     pub author_username: String,
     pub avatar_url: Option<String>,
+    pub author_reply: Option<String>,
+    pub author_reply_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -394,6 +396,7 @@ pub struct ReviewListResponse {
     pub average_rating: Option<f64>,
     pub count: i64,
     pub items: Vec<ReviewItem>,
+    pub pending: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -402,6 +405,25 @@ pub struct ReviewRequest {
     pub rating: i16,
     #[serde(default)]
     pub text: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewReplyRequest {
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminReviewItem {
+    pub id: Uuid,
+    pub mode_title: String,
+    pub mode_slug: String,
+    pub rating: i16,
+    pub text: String,
+    pub author_name: String,
+    pub author_username: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

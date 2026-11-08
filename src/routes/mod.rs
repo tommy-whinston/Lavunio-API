@@ -77,6 +77,10 @@ pub fn router() -> Router<AppState> {
             "/v1/modes/{slug}/reviews",
             get(community::reviews).post(community::submit_review),
         )
+        .route(
+            "/v1/modes/{slug}/reviews/{review_id}/reply",
+            post(community::reply_review),
+        )
         .route("/v1/me/wishlist", get(community::wishlist))
         .route(
             "/v1/me/wishlist/{slug}",
@@ -127,6 +131,12 @@ pub fn router() -> Router<AppState> {
         )
         .route("/v1/admin/moderation/queue", get(admin::queue))
         .route("/v1/admin/moderation/history", get(admin::history))
+        .route("/v1/admin/reviews", get(admin::reviews))
+        .route(
+            "/v1/admin/reviews/{id}/approve",
+            post(admin::approve_review),
+        )
+        .route("/v1/admin/reviews/{id}/reject", post(admin::reject_review))
         .route("/v1/admin/reports", get(admin::reports))
         .route("/v1/admin/reports/{id}/close", post(admin::close_report))
         .route("/v1/admin/moderation/{id}/approve", post(admin::approve))

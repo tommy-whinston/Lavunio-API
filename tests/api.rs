@@ -855,8 +855,7 @@ async fn moderation_rejects_hides_and_logs_actions(pool: PgPool) {
 async fn wishlist_and_reviews_work(pool: PgPool) {
     prepare(&pool).await;
     let (user_id, token) = create_user_token(&pool, "community-user", "player").await;
-    let (_, author_token) = create_user_token(&pool, "community-author", "author").await;
-    let (author_id, _) = create_user_token(&pool, "community-author-2", "author").await;
+    let (author_id, author_token) = create_user_token(&pool, "community-author-2", "author").await;
     let (_, admin_token) = create_user_token(&pool, "community-admin", "admin").await;
 
     sqlx::query(
@@ -933,9 +932,8 @@ async fn wishlist_and_reviews_work(pool: PgPool) {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{created}");
-    assert_eq!(created["count"], 1);
-    assert_eq!(created["averageRating"], 5.0);
-    assert_eq!(created["items"][0]["authorUsername"], "community-user");
+    assert_eq!(created["pending"], true);
+    assert_eq!(created["count"], 0);
 
     let (status, updated) = send(
         app.clone(),
@@ -946,8 +944,66 @@ async fn wishlist_and_reviews_work(pool: PgPool) {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{updated}");
-    assert_eq!(updated["count"], 1);
-    assert_eq!(updated["averageRating"], 3.0);
+    assert_eq!(updated["pending"], true);
+    assert_eq!(updated["count"], 0);
+
+    let (status, queue) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/admin/reviews?status=pending",
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{queue}");
+    assert_eq!(queue.as_array().unwrap().len(), 1);
+    assert_eq!(queue[0]["text"], "Передумал");
+    let review_id = queue[0]["id"].as_str().expect("review id");
+
+    let (status, approved) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/admin/reviews/{review_id}/approve"),
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{approved}");
+
+    let (status, reviews) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/modes/community-mode/reviews",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{reviews}");
+    assert_eq!(reviews["count"], 1);
+    assert_eq!(reviews["averageRating"], 3.0);
+    assert_eq!(reviews["items"][0]["authorUsername"], "community-user");
+    assert!(reviews["items"][0]["authorReply"].is_null());
+
+    let (status, replied) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/modes/community-mode/reviews/{review_id}/reply"),
+        Some(&author_token),
+        Some(json!({ "text": "Спасибо за отзыв!" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{replied}");
+
+    let (status, reviews) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/modes/community-mode/reviews",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{reviews}");
+    assert_eq!(reviews["items"][0]["authorReply"], "Спасибо за отзыв!");
 
     let (status, catalog) = send(
         app.clone(),
@@ -980,6 +1036,46 @@ async fn wishlist_and_reviews_work(pool: PgPool) {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{deleted}");
+
+    let (status, pending) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/modes/community-mode/reviews",
+        Some(&token),
+        Some(json!({ "rating": 1, "text": "На проверку" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{pending}");
+    let (status, queue) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/admin/reviews?status=pending",
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{queue}");
+    let review_id = queue[0]["id"].as_str().expect("review id");
+    let (status, rejected) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/admin/reviews/{review_id}/reject"),
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{rejected}");
+
+    let (status, reviews) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/modes/community-mode/reviews",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{reviews}");
+    assert_eq!(reviews["count"], 0);
 
     let (status, report) = send(
         app.clone(),

@@ -8,7 +8,8 @@ use uuid::Uuid;
 use crate::auth;
 use crate::error::ApiError;
 use crate::models::{
-    AdminModeItem, ModerationHistoryItem, ModerationItem, RejectRequest, ReportItem, SimpleStatus,
+    AdminModeItem, AdminReviewItem, ModerationHistoryItem, ModerationItem, RejectRequest,
+    ReportItem, SimpleStatus,
 };
 use crate::AppState;
 
@@ -26,6 +27,12 @@ pub struct HistoryQuery {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReportsQuery {
+    #[serde(default)]
+    status: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReviewQueueQuery {
     #[serde(default)]
     status: Option<String>,
 }
@@ -130,6 +137,106 @@ pub async fn reports(
     .await?;
 
     Ok(Json(items))
+}
+
+pub async fn reviews(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ReviewQueueQuery>,
+) -> Result<Json<Vec<AdminReviewItem>>, ApiError> {
+    auth::require_admin(&state.pool, &headers).await?;
+    let status = query.status.unwrap_or_else(|| "pending".to_string());
+    let status = status.trim().to_string();
+
+    let items = sqlx::query_as::<_, AdminReviewItem>(
+        r#"
+        SELECT r.id, m.title AS mode_title, m.slug AS mode_slug,
+               r.rating, r.text,
+               u.display_name AS author_name, u.username AS author_username,
+               r.created_at
+        FROM reviews r
+        JOIN modes m ON m.id = r.mode_id
+        JOIN users u ON u.id = r.user_id
+        WHERE ($1 = '' OR r.status = $1)
+        ORDER BY r.created_at DESC
+        LIMIT 100
+        "#,
+    )
+    .bind(&status)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(items))
+}
+
+pub async fn approve_review(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(review_id): Path<Uuid>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let admin = auth::require_admin(&state.pool, &headers).await?;
+    let updated =
+        sqlx::query("UPDATE reviews SET status = 'published' WHERE id = $1 AND status = 'pending'")
+            .bind(review_id)
+            .execute(&state.pool)
+            .await?;
+    if updated.rows_affected() == 0 {
+        return Err(ApiError::NotFound(
+            "Отзыв не найден или уже рассмотрен".to_string(),
+        ));
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO moderation_actions (id, moderator_id, target_type, target_id, action, note)
+        VALUES ($1, $2, 'review', $3, 'review_approve', '')
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(admin.id)
+    .bind(review_id)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "published".to_string(),
+    }))
+}
+
+pub async fn reject_review(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(review_id): Path<Uuid>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let admin = auth::require_admin(&state.pool, &headers).await?;
+    let updated =
+        sqlx::query("UPDATE reviews SET status = 'rejected' WHERE id = $1 AND status = 'pending'")
+            .bind(review_id)
+            .execute(&state.pool)
+            .await?;
+    if updated.rows_affected() == 0 {
+        return Err(ApiError::NotFound(
+            "Отзыв не найден или уже рассмотрен".to_string(),
+        ));
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO moderation_actions (id, moderator_id, target_type, target_id, action, note)
+        VALUES ($1, $2, 'review', $3, 'review_reject', '')
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(admin.id)
+    .bind(review_id)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "rejected".to_string(),
+    }))
 }
 
 pub async fn close_report(

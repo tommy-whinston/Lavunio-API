@@ -8,8 +8,8 @@ use uuid::Uuid;
 use crate::auth;
 use crate::error::ApiError;
 use crate::models::{
-    FeedItem, FollowedAuthor, ReportRequest, ReviewItem, ReviewListResponse, ReviewRequest,
-    SimpleStatus,
+    FeedItem, FollowedAuthor, ReportRequest, ReviewItem, ReviewListResponse, ReviewReplyRequest,
+    ReviewRequest, SimpleStatus,
 };
 use crate::AppState;
 
@@ -49,7 +49,7 @@ async fn review_list(pool: &PgPool, mode_id: Uuid) -> Result<ReviewListResponse,
         r#"
         SELECT r.id, r.rating, r.text,
                u.display_name AS author_name, u.username AS author_username,
-               u.avatar_url, r.created_at
+               u.avatar_url, r.author_reply, r.author_reply_at, r.created_at
         FROM reviews r
         JOIN users u ON u.id = r.user_id
         WHERE r.mode_id = $1 AND r.status = 'published'
@@ -65,6 +65,7 @@ async fn review_list(pool: &PgPool, mode_id: Uuid) -> Result<ReviewListResponse,
         average_rating: stats.average_rating,
         count: stats.count,
         items,
+        pending: false,
     })
 }
 
@@ -155,11 +156,13 @@ pub async fn submit_review(
     sqlx::query(
         r#"
         INSERT INTO reviews (id, mode_id, user_id, rating, text, status, created_at)
-        VALUES ($1, $2, $3, $4, $5, 'published', now())
+        VALUES ($1, $2, $3, $4, $5, 'pending', now())
         ON CONFLICT (mode_id, user_id) DO UPDATE
             SET rating = EXCLUDED.rating,
                 text = EXCLUDED.text,
-                status = 'published',
+                status = 'pending',
+                author_reply = NULL,
+                author_reply_at = NULL,
                 created_at = now()
         "#,
     )
@@ -171,7 +174,54 @@ pub async fn submit_review(
     .execute(&state.pool)
     .await?;
 
-    Ok(Json(review_list(&state.pool, mode_id).await?))
+    let mut response = review_list(&state.pool, mode_id).await?;
+    response.pending = true;
+    Ok(Json(response))
+}
+
+pub async fn reply_review(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((slug, review_id)): Path<(String, Uuid)>,
+    Json(body): Json<ReviewReplyRequest>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let text = body.text.trim();
+    if text.is_empty() {
+        return Err(ApiError::BadRequest("Напиши текст ответа".to_string()));
+    }
+    if text.chars().count() > 2000 {
+        return Err(ApiError::BadRequest(
+            "Ответ должен быть не длиннее 2000 символов".to_string(),
+        ));
+    }
+    let mode_id = published_mode_id(&state.pool, &slug).await?;
+    let author_id = sqlx::query_scalar::<_, Uuid>("SELECT author_id FROM modes WHERE id = $1")
+        .bind(mode_id)
+        .fetch_one(&state.pool)
+        .await?;
+    if author_id != user.id && user.role != "admin" {
+        return Err(ApiError::Forbidden(
+            "Ответить на отзыв может только автор режима".to_string(),
+        ));
+    }
+
+    let updated = sqlx::query(
+        "UPDATE reviews SET author_reply = $1, author_reply_at = now() WHERE id = $2 AND mode_id = $3 AND status = 'published'",
+    )
+    .bind(text)
+    .bind(review_id)
+    .bind(mode_id)
+    .execute(&state.pool)
+    .await?;
+    if updated.rows_affected() == 0 {
+        return Err(ApiError::NotFound("Отзыв не найден".to_string()));
+    }
+
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "replied".to_string(),
+    }))
 }
 
 pub async fn delete_review(
