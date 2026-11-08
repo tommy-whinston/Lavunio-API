@@ -128,6 +128,14 @@ pub struct CatalogResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CollectionSection {
+    pub id: String,
+    pub title: String,
+    pub modes: Vec<ModeSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuthorResponse {
     pub id: Uuid,
     pub username: String,

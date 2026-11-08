@@ -207,11 +207,23 @@ async fn catalog_returns_only_published_modes(pool: PgPool) {
     .expect("release");
 
     let (state, _dir) = test_state(pool);
-    let (status, body) = send(app(state), Method::GET, "/v1/catalog", None, None).await;
+    let app = app(state);
+    let (status, body) = send(app.clone(), Method::GET, "/v1/catalog", None, None).await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["total"], 1);
     assert_eq!(body["items"][0]["slug"], "published-mode");
+
+    let (status, sections) = send(app, Method::GET, "/v1/collections", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{sections}");
+    let sections = sections.as_array().expect("sections array");
+    for id in ["featured", "popular", "new", "updated"] {
+        let section = sections
+            .iter()
+            .find(|section| section["id"] == id)
+            .unwrap_or_else(|| panic!("missing section {id}"));
+        assert_eq!(section["modes"][0]["slug"], "published-mode");
+    }
 }
 
 #[sqlx::test]

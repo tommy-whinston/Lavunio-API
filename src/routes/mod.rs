@@ -61,6 +61,7 @@ pub fn router() -> Router<AppState> {
             get(game_auth::has_joined),
         )
         .route("/v1/catalog", get(catalog::catalog))
+        .route("/v1/collections", get(catalog::collections))
         .route("/v1/modes/{slug}", get(catalog::mode_detail))
         .route("/v1/modes/{slug}/releases", get(catalog::releases))
         .route("/v1/modes/{slug}/events", post(publisher::record_event))

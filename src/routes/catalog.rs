@@ -7,8 +7,8 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::models::{
-    Asset, AuthorResponse, BuildInfo, CatalogResponse, ModeRow, ModeSummary, Release,
-    ReleaseSummary, Tag, UserSummary,
+    Asset, AuthorResponse, BuildInfo, CatalogResponse, CollectionSection, ModeRow, ModeSummary,
+    Release, ReleaseSummary, Tag, UserSummary,
 };
 use crate::AppState;
 
@@ -329,6 +329,95 @@ pub async fn catalog(
         limit,
         total,
     }))
+}
+
+fn mode_rating(mode: &ModeSummary) -> f64 {
+    mode.rating.unwrap_or(0.0)
+}
+
+pub async fn collections(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<CollectionSection>>, ApiError> {
+    let rows = sqlx::query_as::<_, ModeRow>(
+        r#"
+        SELECT m.id, m.slug, m.title, m.short_description, m.description, m.status,
+               m.cover_url, m.mc_version, m.loader, m.loader_version, m.size_label,
+               m.created_at, m.updated_at,
+               u.id AS author_id, u.username AS author_username,
+               u.display_name AS author_name, u.avatar_url AS author_avatar
+        FROM modes m
+        JOIN users u ON u.id = m.author_id
+        WHERE m.status = 'published'
+        ORDER BY m.updated_at DESC
+        LIMIT 100
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mut modes = Vec::with_capacity(rows.len());
+    for row in rows {
+        modes.push(mode_summary(&state.pool, row).await?);
+    }
+
+    if modes.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+
+    let mut popular = modes.clone();
+    popular.sort_by(|a, b| {
+        b.installs
+            .cmp(&a.installs)
+            .then_with(|| mode_rating(b).total_cmp(&mode_rating(a)))
+            .then_with(|| a.title.cmp(&b.title))
+    });
+    popular.truncate(6);
+
+    let mut newest = modes.clone();
+    newest.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    newest.truncate(6);
+
+    let mut updated = modes.clone();
+    updated.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    updated.truncate(6);
+
+    let mut featured: Vec<ModeSummary> = modes
+        .iter()
+        .filter(|mode| mode.reviews_count > 0)
+        .cloned()
+        .collect();
+    featured.sort_by(|a, b| {
+        mode_rating(b)
+            .total_cmp(&mode_rating(a))
+            .then_with(|| b.installs.cmp(&a.installs))
+    });
+    if featured.is_empty() {
+        featured = popular.clone();
+    }
+    featured.truncate(6);
+
+    Ok(Json(vec![
+        CollectionSection {
+            id: "featured".to_string(),
+            title: "Рекомендуем".to_string(),
+            modes: featured,
+        },
+        CollectionSection {
+            id: "popular".to_string(),
+            title: "Популярное".to_string(),
+            modes: popular,
+        },
+        CollectionSection {
+            id: "new".to_string(),
+            title: "Новинки".to_string(),
+            modes: newest,
+        },
+        CollectionSection {
+            id: "updated".to_string(),
+            title: "Обновления".to_string(),
+            modes: updated,
+        },
+    ]))
 }
 
 pub async fn mode_detail(
