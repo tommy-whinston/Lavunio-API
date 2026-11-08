@@ -48,7 +48,10 @@ pub async fn queue(
         SELECT r.id AS release_id, r.version,
                m.id AS mode_id, m.slug AS mode_slug, m.title AS mode_title,
                u.display_name AS author_name, u.username AS author_username,
-               r.changelog, r.created_at
+               r.changelog, r.created_at,
+               (SELECT a.manifest->'scan' FROM release_assets a
+                WHERE a.release_id = r.id AND a.kind = 'archive'
+                ORDER BY a.created_at LIMIT 1) AS scan
         FROM releases r
         JOIN modes m ON m.id = r.mode_id
         JOIN users u ON u.id = m.author_id

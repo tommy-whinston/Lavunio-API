@@ -314,6 +314,7 @@ pub struct ModerationItem {
     pub author_username: String,
     pub changelog: String,
     pub created_at: DateTime<Utc>,
+    pub scan: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, FromRow)]

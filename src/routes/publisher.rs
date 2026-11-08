@@ -3,6 +3,7 @@ use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use axum::Json;
 use image::ImageFormat;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
@@ -601,16 +602,60 @@ pub async fn submit_release(
         ));
     }
 
-    let archives = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM release_assets WHERE release_id = $1 AND kind = 'archive' AND url <> ''",
+    let archives = sqlx::query_as::<_, (Uuid, Option<String>, Option<Value>, Value)>(
+        r#"
+        SELECT id, storage_key, manifest, parts
+        FROM release_assets
+        WHERE release_id = $1 AND kind = 'archive' AND url <> ''
+        ORDER BY created_at
+        LIMIT 1
+        "#,
     )
     .bind(release_id)
-    .fetch_one(&state.pool)
-    .await?;
-    if archives == 0 {
-        return Err(ApiError::BadRequest(
-            "Сначала загрузи сборку режима".to_string(),
-        ));
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("Сначала загрузи сборку режима".to_string()))?;
+
+    let (archive_id, storage_key, manifest, parts) = archives;
+    let split = parts
+        .as_array()
+        .map(|items| !items.is_empty())
+        .unwrap_or(false);
+    if split {
+        tracing::warn!(
+            release_id = %release_id,
+            "release uses split archive; server-side scan skipped"
+        );
+    } else {
+        let key = storage_key
+            .ok_or_else(|| ApiError::BadRequest("У сборки нет файла в хранилище".to_string()))?;
+        let bytes = state
+            .storage
+            .get_bytes(&key)
+            .await
+            .map_err(ApiError::Internal)?;
+        let scan = crate::build_scan::scan_zip(&bytes).map_err(ApiError::BadRequest)?;
+        let suspicious = scan
+            .get("suspicious")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let mut updated_manifest = manifest.unwrap_or_else(|| json!({}));
+        if let Some(object) = updated_manifest.as_object_mut() {
+            object.insert("scan".to_string(), scan);
+        }
+        sqlx::query("UPDATE release_assets SET manifest = $2 WHERE id = $1")
+            .bind(archive_id)
+            .bind(&updated_manifest)
+            .execute(&state.pool)
+            .await?;
+        if !suspicious.is_empty() {
+            tracing::warn!(
+                release_id = %release_id,
+                "suspicious files in build: {:?}",
+                suspicious
+            );
+        }
     }
 
     sqlx::query("UPDATE releases SET status = 'pending' WHERE id = $1")

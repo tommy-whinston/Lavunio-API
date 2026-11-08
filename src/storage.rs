@@ -177,6 +177,33 @@ impl Storage {
         Ok(output.content_length().unwrap_or(0).max(0) as u64)
     }
 
+    pub async fn get_bytes(&self, key: &str) -> Result<Vec<u8>, String> {
+        match self {
+            Self::Local(storage) => {
+                let path = storage.dir.join(key);
+                tokio::fs::read(&path)
+                    .await
+                    .map_err(|error| format!("Не удалось прочитать {}: {error}", path.display()))
+            }
+            Self::S3(storage) => {
+                let output = storage
+                    .client
+                    .get_object()
+                    .bucket(&storage.bucket)
+                    .key(key)
+                    .send()
+                    .await
+                    .map_err(|error| format!("Не удалось скачать файл из S3: {error}"))?;
+                let data = output
+                    .body
+                    .collect()
+                    .await
+                    .map_err(|error| format!("Не удалось прочитать файл из S3: {error}"))?;
+                Ok(data.into_bytes().to_vec())
+            }
+        }
+    }
+
     pub async fn put_bytes(
         &self,
         key: &str,
