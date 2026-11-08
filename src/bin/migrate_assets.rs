@@ -21,6 +21,13 @@ struct AssetRow {
     parts: Value,
 }
 
+#[derive(Debug, FromRow)]
+struct CoverRow {
+    id: Uuid,
+    slug: String,
+    cover_url: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
@@ -49,7 +56,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for asset in assets {
         migrate_asset(&pool, &storage, &client, &asset).await?;
     }
+
+    let covers = sqlx::query_as::<_, CoverRow>(
+        r#"
+        SELECT id, slug, cover_url
+        FROM modes
+        WHERE cover_url LIKE 'https://raw.githubusercontent.com/%'
+        ORDER BY slug
+        "#,
+    )
+    .fetch_all(&pool)
+    .await?;
+
+    println!("covers to migrate: {}", covers.len());
+    for cover in covers {
+        migrate_cover(&pool, &storage, &client, &cover).await?;
+    }
+
     println!("asset migration complete");
+    Ok(())
+}
+
+async fn migrate_cover(
+    pool: &PgPool,
+    storage: &Storage,
+    client: &reqwest::Client,
+    cover: &CoverRow,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let bytes = download(client, &cover.cover_url).await?;
+    let hash = sha256_hex(&bytes);
+    let extension = cover
+        .cover_url
+        .rsplit('.')
+        .next()
+        .map(|value| value.to_ascii_lowercase())
+        .filter(|value| matches!(value.as_str(), "png" | "jpg" | "jpeg" | "webp"))
+        .unwrap_or_else(|| "png".to_string());
+    let key = format!("covers/{}-{hash}.{extension}", cover.id);
+    storage
+        .put_bytes(&key, &bytes, Some(content_type(&extension)))
+        .await?;
+    let url = storage.public_url(&key);
+
+    sqlx::query("UPDATE modes SET cover_url = $2, updated_at = now() WHERE id = $1")
+        .bind(cover.id)
+        .bind(&url)
+        .execute(pool)
+        .await?;
+
+    println!("migrated cover {} -> {}", cover.slug, url);
     Ok(())
 }
 
