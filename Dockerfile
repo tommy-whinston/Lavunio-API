@@ -17,7 +17,8 @@ COPY src ./src
 COPY migrations ./migrations
 COPY seed ./seed
 
-RUN cargo build --release --bin lavunio-api --bin seed --bin role --bin token --bin migrate_assets
+RUN find src -type f -exec touch {} + \
+    && cargo build --release --bin lavunio-api --bin seed --bin role --bin token --bin migrate_assets
 
 FROM debian:trixie-slim
 
