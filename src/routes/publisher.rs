@@ -145,14 +145,32 @@ pub async fn create_mode(
     if body.title.trim().is_empty() {
         return Err(ApiError::BadRequest("Укажи название режима".to_string()));
     }
+    let trailer_url = body
+        .trailer_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    if let Some(url) = trailer_url.as_deref() {
+        if !url.starts_with("http://") && !url.starts_with("https://") {
+            return Err(ApiError::BadRequest(
+                "Ссылка на трейлер должна начинаться с http:// или https://".to_string(),
+            ));
+        }
+        if url.chars().count() > 500 {
+            return Err(ApiError::BadRequest(
+                "Ссылка на трейлер слишком длинная".to_string(),
+            ));
+        }
+    }
 
     let mode_id = Uuid::new_v4();
     let inserted = sqlx::query_scalar::<_, Uuid>(
         r#"
         INSERT INTO modes
-            (id, slug, title, short_description, description, status, cover_url, author_id,
-             mc_version, loader, loader_version, size_label)
-        VALUES ($1, $2, $3, $4, $5, 'draft', $6, $7, $8, $9, $10, $11)
+            (id, slug, title, short_description, description, status, cover_url, trailer_url,
+             author_id, mc_version, loader, loader_version, size_label)
+        VALUES ($1, $2, $3, $4, $5, 'draft', $6, $7, $8, $9, $10, $11, $12)
         RETURNING id
         "#,
     )
@@ -162,6 +180,7 @@ pub async fn create_mode(
     .bind(body.short_description.trim())
     .bind(&body.description)
     .bind(&body.cover_url)
+    .bind(trailer_url.as_deref())
     .bind(user.id)
     .bind(body.mc_version.unwrap_or_default().trim())
     .bind(

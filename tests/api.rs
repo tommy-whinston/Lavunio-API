@@ -333,6 +333,7 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
             "description": "Created by integration test",
             "mcVersion": "1.12.2",
             "loader": "forge",
+            "trailerUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
             "tags": ["test", "api"]
         })),
     )
@@ -470,6 +471,10 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
     assert_eq!(catalog["total"], 1);
     assert_eq!(catalog["items"][0]["slug"], "api-test");
     assert_eq!(catalog["items"][0]["mcVersion"], "1.12.2");
+    assert_eq!(
+        catalog["items"][0]["trailerUrl"],
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    );
     assert_eq!(
         catalog["items"][0]["screenshots"].as_array().unwrap().len(),
         1

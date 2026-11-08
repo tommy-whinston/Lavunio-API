@@ -30,6 +30,7 @@ pub struct ModeRow {
     pub description: String,
     pub status: String,
     pub cover_url: Option<String>,
+    pub trailer_url: Option<String>,
     pub mc_version: String,
     pub loader: String,
     pub loader_version: Option<String>,
@@ -101,6 +102,7 @@ pub struct ModeSummary {
     pub description: String,
     pub status: String,
     pub cover_url: Option<String>,
+    pub trailer_url: Option<String>,
     pub mc_version: String,
     pub loader: String,
     pub loader_version: Option<String>,
@@ -177,6 +179,7 @@ pub struct CreateModeRequest {
     #[serde(default)]
     pub description: String,
     pub cover_url: Option<String>,
+    pub trailer_url: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
     pub mc_version: Option<String>,

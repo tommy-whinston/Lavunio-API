@@ -154,6 +154,7 @@ async fn mode_summary(pool: &PgPool, row: ModeRow) -> Result<ModeSummary, ApiErr
         description: row.description,
         status: row.status,
         cover_url: row.cover_url,
+        trailer_url: row.trailer_url,
         mc_version: row.mc_version,
         loader: row.loader,
         loader_version: row.loader_version,
@@ -180,7 +181,7 @@ async fn mode_row_by_slug(pool: &PgPool, slug: &str) -> Result<ModeRow, ApiError
     sqlx::query_as::<_, ModeRow>(
         r#"
         SELECT m.id, m.slug, m.title, m.short_description, m.description, m.status,
-               m.cover_url, m.mc_version, m.loader, m.loader_version, m.size_label,
+               m.cover_url, m.trailer_url, m.mc_version, m.loader, m.loader_version, m.size_label,
                m.created_at, m.updated_at,
                u.id AS author_id, u.username AS author_username,
                u.display_name AS author_name, u.avatar_url AS author_avatar
@@ -235,7 +236,7 @@ pub async fn catalog(
     let sql = format!(
         r#"
         SELECT m.id, m.slug, m.title, m.short_description, m.description, m.status,
-               m.cover_url, m.mc_version, m.loader, m.loader_version, m.size_label,
+               m.cover_url, m.trailer_url, m.mc_version, m.loader, m.loader_version, m.size_label,
                m.created_at, m.updated_at,
                u.id AS author_id, u.username AS author_username,
                u.display_name AS author_name, u.avatar_url AS author_avatar
@@ -341,7 +342,7 @@ pub async fn collections(
     let rows = sqlx::query_as::<_, ModeRow>(
         r#"
         SELECT m.id, m.slug, m.title, m.short_description, m.description, m.status,
-               m.cover_url, m.mc_version, m.loader, m.loader_version, m.size_label,
+               m.cover_url, m.trailer_url, m.mc_version, m.loader, m.loader_version, m.size_label,
                m.created_at, m.updated_at,
                u.id AS author_id, u.username AS author_username,
                u.display_name AS author_name, u.avatar_url AS author_avatar
@@ -468,7 +469,7 @@ pub async fn author(
     let rows = sqlx::query_as::<_, ModeRow>(
         r#"
         SELECT m.id, m.slug, m.title, m.short_description, m.description, m.status,
-               m.cover_url, m.mc_version, m.loader, m.loader_version, m.size_label,
+               m.cover_url, m.trailer_url, m.mc_version, m.loader, m.loader_version, m.size_label,
                m.created_at, m.updated_at,
                u.id AS author_id, u.username AS author_username,
                u.display_name AS author_name, u.avatar_url AS author_avatar
