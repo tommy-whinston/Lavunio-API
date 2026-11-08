@@ -2,6 +2,7 @@ pub mod auth;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod mail;
 pub mod metrics;
 pub mod models;
 pub mod rate_limit;
@@ -22,6 +23,7 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
 use crate::config::Config;
+use crate::mail::Mailer;
 use crate::metrics::Metrics;
 use crate::rate_limit::RateLimiter;
 use crate::storage::Storage;
@@ -31,6 +33,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub pool: PgPool,
     pub storage: Arc<Storage>,
+    pub mailer: Arc<Mailer>,
     pub rate_limiter: Arc<RateLimiter>,
     pub metrics: Arc<Metrics>,
 }
@@ -40,6 +43,7 @@ impl AppState {
         Self {
             rate_limiter: Arc::new(RateLimiter::from_config(&config)),
             metrics: Arc::new(Metrics::new()),
+            mailer: Arc::new(Mailer::new(&config)),
             config,
             pool,
             storage,

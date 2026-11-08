@@ -21,6 +21,9 @@ pub struct Config {
     pub s3_presign_expires_secs: u64,
     pub bootstrap_token: Option<String>,
     pub dev_mode: bool,
+    pub resend_api_key: Option<String>,
+    pub mail_from: String,
+    pub mail_reply_to: Option<String>,
     pub access_token_ttl_secs: u64,
     pub refresh_token_ttl_secs: u64,
     pub email_token_ttl_secs: u64,
@@ -84,6 +87,18 @@ impl Config {
             .ok()
             .filter(|value| !value.trim().is_empty());
         let dev_mode = env_bool("LAVUNIO_DEV_MODE", false);
+        let resend_api_key = env::var("RESEND_API_KEY")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        let mail_from = env::var("MAIL_FROM")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "Lavunio <no-reply@lavunio.pro>".to_string());
+        let mail_reply_to = env::var("MAIL_REPLY_TO")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
         let access_token_ttl_secs = env_u64("LAVUNIO_ACCESS_TTL_SECS", 15 * 60);
         let refresh_token_ttl_secs = env_u64("LAVUNIO_REFRESH_TTL_SECS", 30 * 24 * 60 * 60);
         let email_token_ttl_secs = env_u64("LAVUNIO_EMAIL_TTL_SECS", 24 * 60 * 60);
@@ -114,6 +129,9 @@ impl Config {
             s3_presign_expires_secs,
             bootstrap_token,
             dev_mode,
+            resend_api_key,
+            mail_from,
+            mail_reply_to,
             access_token_ttl_secs,
             refresh_token_ttl_secs,
             email_token_ttl_secs,
@@ -146,6 +164,9 @@ impl Config {
             s3_presign_expires_secs: 3600,
             bootstrap_token: None,
             dev_mode: true,
+            resend_api_key: None,
+            mail_from: "Lavunio <no-reply@localhost>".to_string(),
+            mail_reply_to: None,
             access_token_ttl_secs: 15 * 60,
             refresh_token_ttl_secs: 30 * 24 * 60 * 60,
             email_token_ttl_secs: 24 * 60 * 60,

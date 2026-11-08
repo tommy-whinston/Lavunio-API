@@ -6,6 +6,13 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
+RUN mkdir -p src/bin \
+    && printf '' > src/lib.rs \
+    && printf 'fn main() {}' > src/main.rs \
+    && for name in seed role token migrate_assets; do printf 'fn main() {}' > "src/bin/$name.rs"; done \
+    && cargo build --release --bins \
+    && rm -rf src
+
 COPY src ./src
 COPY migrations ./migrations
 COPY seed ./seed

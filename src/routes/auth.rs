@@ -1,7 +1,9 @@
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::{header::AUTHORIZATION, HeaderMap};
+use axum::response::Html;
 use axum::Json;
 use chrono::{DateTime, Duration, Utc};
+use serde::Deserialize;
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -198,6 +200,8 @@ pub async fn register(
             token = %verification_token,
             "email verification token issued (dev mode)"
         );
+    } else {
+        send_verification_email(&state, &email, &verification_token).await;
     }
 
     Ok(Json(RegisterResponse {
@@ -355,7 +359,14 @@ pub async fn verify_email(
     State(state): State<AppState>,
     Json(body): Json<VerifyEmailRequest>,
 ) -> Result<Json<SimpleStatus>, ApiError> {
-    let token = body.token.trim();
+    consume_verification_token(&state.pool, body.token.trim()).await?;
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "email_verified".to_string(),
+    }))
+}
+
+async fn consume_verification_token(pool: &sqlx::PgPool, token: &str) -> Result<(), ApiError> {
     if token.is_empty() {
         return Err(ApiError::BadRequest("Нужен токен".to_string()));
     }
@@ -368,7 +379,7 @@ pub async fn verify_email(
         "#,
     )
     .bind(auth::hash_token(token))
-    .fetch_optional(&state.pool)
+    .fetch_optional(pool)
     .await?;
 
     let Some((token_id, user_id)) = row else {
@@ -377,7 +388,7 @@ pub async fn verify_email(
         ));
     };
 
-    let mut tx = state.pool.begin().await?;
+    let mut tx = pool.begin().await?;
     sqlx::query("UPDATE email_verification_tokens SET used_at = now() WHERE id = $1")
         .bind(token_id)
         .execute(&mut *tx)
@@ -389,11 +400,173 @@ pub async fn verify_email(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    Ok(())
+}
 
-    Ok(Json(SimpleStatus {
-        ok: true,
-        status: "email_verified".to_string(),
-    }))
+#[derive(Debug, Deserialize)]
+pub struct VerifyEmailQuery {
+    token: Option<String>,
+}
+
+pub async fn verify_email_page(
+    State(state): State<AppState>,
+    Query(query): Query<VerifyEmailQuery>,
+) -> Html<String> {
+    let token = query.token.unwrap_or_default();
+    match consume_verification_token(&state.pool, token.trim()).await {
+        Ok(()) => Html(status_page(
+            "Почта подтверждена",
+            "Готово! Вернитесь в Lavunio — адрес успешно подтверждён.",
+            true,
+        )),
+        Err(error) => Html(status_page(
+            "Не удалось подтвердить почту",
+            &error.to_string(),
+            false,
+        )),
+    }
+}
+
+pub async fn reset_password_page() -> Html<&'static str> {
+    Html(RESET_PASSWORD_PAGE)
+}
+
+fn status_page(title: &str, message: &str, ok: bool) -> String {
+    let color = if ok { "#7ee787" } else { "#ff7b72" };
+    STATUS_PAGE
+        .replace("__TITLE__", title)
+        .replace("__MESSAGE__", message)
+        .replace("__COLOR__", color)
+}
+
+const STATUS_PAGE: &str = r#"<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>__TITLE__ — Lavunio</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0f1115; color: #e6edf3; font-family: "Segoe UI", Arial, sans-serif; }
+    .card { max-width: 440px; margin: 24px; padding: 36px; background: #161b22; border: 1px solid #30363d; border-radius: 16px; text-align: center; }
+    .brand { font-size: 20px; font-weight: 700; letter-spacing: 3px; color: #7ee787; margin-bottom: 24px; }
+    h1 { margin: 0 0 12px; font-size: 22px; color: __COLOR__; }
+    p { margin: 0; line-height: 1.6; color: #9da7b3; }
+    a { display: inline-block; margin-top: 24px; color: #58a6ff; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">LAVUNIO</div>
+    <h1>__TITLE__</h1>
+    <p>__MESSAGE__</p>
+    <a href="https://lavunio.pro">lavunio.pro</a>
+  </div>
+</body>
+</html>"#;
+
+const RESET_PASSWORD_PAGE: &str = r#"<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Сброс пароля — Lavunio</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0f1115; color: #e6edf3; font-family: "Segoe UI", Arial, sans-serif; }
+    .card { width: min(420px, calc(100% - 48px)); padding: 36px; background: #161b22; border: 1px solid #30363d; border-radius: 16px; }
+    .brand { font-size: 20px; font-weight: 700; letter-spacing: 3px; color: #7ee787; margin-bottom: 24px; text-align: center; }
+    h1 { margin: 0 0 20px; font-size: 21px; text-align: center; }
+    label { display: block; margin: 14px 0 6px; font-size: 13px; color: #9da7b3; }
+    input { width: 100%; box-sizing: border-box; padding: 11px 12px; border-radius: 9px; border: 1px solid #30363d; background: #0d1117; color: #e6edf3; font-size: 15px; }
+    input:focus { outline: none; border-color: #2ea043; }
+    button { width: 100%; margin-top: 22px; padding: 12px; border: 0; border-radius: 9px; background: #2ea043; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: default; }
+    .message { margin-top: 18px; font-size: 14px; line-height: 1.5; text-align: center; color: #9da7b3; }
+    .error { color: #ff7b72; }
+    .ok { color: #7ee787; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">LAVUNIO</div>
+    <h1>Новый пароль</h1>
+    <form id="form">
+      <label for="password">Пароль (8–128 символов)</label>
+      <input id="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+      <label for="confirm">Повторите пароль</label>
+      <input id="confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+      <button id="submit" type="submit">Сохранить пароль</button>
+      <div class="message" id="message" hidden></div>
+    </form>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const token = params.get('token') || '';
+    const form = document.getElementById('form');
+    const message = document.getElementById('message');
+    const submit = document.getElementById('submit');
+
+    function show(text, ok) {
+      message.textContent = text;
+      message.className = 'message ' + (ok ? 'ok' : 'error');
+      message.hidden = false;
+    }
+
+    if (!token) {
+      form.hidden = true;
+      show('Ссылка недействительна: в ней нет токена. Запросите письмо ещё раз.', false);
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const password = document.getElementById('password').value;
+      const confirm = document.getElementById('confirm').value;
+      if (password !== confirm) {
+        show('Пароли не совпадают.', false);
+        return;
+      }
+      submit.disabled = true;
+      try {
+        const response = await fetch('/v1/auth/password/reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, password })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          show(data.error || 'Не удалось сохранить пароль.', false);
+          submit.disabled = false;
+          return;
+        }
+        form.reset();
+        form.hidden = true;
+        show('Пароль изменён. Вернитесь в Lavunio и войдите с новым паролем.', true);
+      } catch (error) {
+        show('Ошибка сети. Попробуйте ещё раз.', false);
+        submit.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>"#;
+
+async fn send_verification_email(state: &AppState, email: &str, token: &str) {
+    if !state.mailer.enabled() {
+        tracing::warn!(email = %email, "verification email skipped: RESEND_API_KEY is not configured");
+        return;
+    }
+    if let Err(error) = state.mailer.send_verification(email, token).await {
+        tracing::error!(email = %email, error = %error, "failed to send verification email");
+    }
+}
+
+async fn send_password_reset_email(state: &AppState, email: &str, token: &str) {
+    if !state.mailer.enabled() {
+        tracing::warn!(email = %email, "password reset email skipped: RESEND_API_KEY is not configured");
+        return;
+    }
+    if let Err(error) = state.mailer.send_password_reset(email, token).await {
+        tracing::error!(email = %email, error = %error, "failed to send password reset email");
+    }
 }
 
 pub async fn resend_verification(
@@ -441,6 +614,8 @@ pub async fn resend_verification(
             token = %token,
             "email verification token reissued (dev mode)"
         );
+    } else {
+        send_verification_email(&state, &email, &token).await;
     }
 
     Ok(Json(VerificationResponse {
@@ -493,6 +668,8 @@ pub async fn forgot_password(
                 token = %token,
                 "password reset token issued (dev mode)"
             );
+        } else {
+            send_password_reset_email(&state, &email, &token).await;
         }
 
         return Ok(Json(ForgotPasswordResponse {

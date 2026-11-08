@@ -21,13 +21,17 @@ pub fn router() -> Router<AppState> {
         .route("/v1/auth/login", post(auth::login))
         .route("/v1/auth/refresh", post(auth::refresh))
         .route("/v1/auth/logout", post(auth::logout))
-        .route("/v1/auth/verify-email", post(auth::verify_email))
+        .route(
+            "/v1/auth/verify-email",
+            get(auth::verify_email_page).post(auth::verify_email),
+        )
         .route(
             "/v1/auth/verify-email/resend",
             post(auth::resend_verification),
         )
         .route("/v1/auth/password/forgot", post(auth::forgot_password))
         .route("/v1/auth/password/reset", post(auth::reset_password))
+        .route("/reset-password", get(auth::reset_password_page))
         .route("/v1/me", get(auth::me))
         .route("/v1/me/identities", get(auth::identities))
         .route("/v1/game/session", post(game_auth::create_game_session))
