@@ -249,6 +249,7 @@ src/
     auth.rs
     game_auth.rs
     catalog.rs
+    community.rs
     publisher.rs
     admin.rs
 migrations/
@@ -260,6 +261,7 @@ migrations/
   0006_skins.sql
   0007_moderation.sql
   0008_mode_events.sql
+  0009_wishlist.sql
 seed/
   modes.json
   *.manifest.json
