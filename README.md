@@ -252,6 +252,7 @@ migrations/
   0005_account_links.sql
   0006_skins.sql
   0007_moderation.sql
+  0008_mode_events.sql
 seed/
   modes.json
   *.manifest.json
