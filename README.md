@@ -25,7 +25,7 @@
 - `PUT /v1/me/cape` — загрузить плащ; `DELETE /v1/me/cape` — удалить.
 - `/authserver/*` и `/sessionserver/*` — Yggdrasil-совместимые endpoints для Minecraft.
 - `GET /v1/catalog` — каталог опубликованных режимов с поиском, тегом и пагинацией.
-- `GET /v1/collections` — подборки: рекомендуем, популярное, новинки, обновления.
+- `GET /v1/collections` — подборки: рекомендуем, популярное, новинки, обновления и ручные коллекции.
 - `GET /v1/news` — новости магазина; `POST /v1/news` — опубликовать новость (админ).
 - `GET /v1/modes/{slug}/news` — новости режима; `POST /v1/publisher/modes/{id}/news` — новость от автора.
 - `DELETE /v1/news/{id}` — удалить новость (автор или админ).
@@ -46,6 +46,9 @@
 - `GET /v1/admin/reviews?status=pending` — очередь отзывов на модерации.
 - `POST /v1/admin/reviews/{id}/approve` — опубликовать отзыв.
 - `POST /v1/admin/reviews/{id}/reject` — отклонить отзыв.
+- `GET /v1/admin/collections` — список ручных подборок.
+- `POST /v1/admin/collections` — создать подборку с режимами.
+- `DELETE /v1/admin/collections/{id}` — удалить подборку.
 - `POST /v1/modes/{slug}/events` — события скачивания, установки и обновления для статистики.
 - `GET /v1/me/wishlist` — список желаемого.
 - `POST /v1/me/wishlist/{slug}` — добавить в список желаемого; `DELETE` — убрать.

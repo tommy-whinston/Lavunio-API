@@ -8,8 +8,8 @@ use uuid::Uuid;
 use crate::auth;
 use crate::error::ApiError;
 use crate::models::{
-    AdminModeItem, AdminReviewItem, ModerationHistoryItem, ModerationItem, RejectRequest,
-    ReportItem, SimpleStatus,
+    AdminCollectionItem, AdminModeItem, AdminReviewItem, CreateCollectionRequest,
+    ModerationHistoryItem, ModerationItem, RejectRequest, ReportItem, SimpleStatus,
 };
 use crate::AppState;
 
@@ -82,6 +82,147 @@ pub async fn modes(
     .await?;
 
     Ok(Json(items))
+}
+
+pub async fn collections(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<AdminCollectionItem>>, ApiError> {
+    auth::require_admin(&state.pool, &headers).await?;
+
+    let items = sqlx::query_as::<_, AdminCollectionItem>(
+        r#"
+        SELECT c.id, c.slug, c.title, c.description, c.status, c.sort_order, c.created_at,
+               COALESCE(
+                   array_agg(m.slug ORDER BY cm.sort_order) FILTER (WHERE m.slug IS NOT NULL),
+                   '{}'
+               ) AS mode_slugs
+        FROM collections c
+        LEFT JOIN collection_modes cm ON cm.collection_id = c.id
+        LEFT JOIN modes m ON m.id = cm.mode_id
+        GROUP BY c.id
+        ORDER BY c.sort_order, c.created_at DESC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(items))
+}
+
+pub async fn create_collection(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CreateCollectionRequest>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    auth::require_admin(&state.pool, &headers).await?;
+
+    let slug = body.slug.trim().to_lowercase();
+    if !super::validate_slug(&slug) {
+        return Err(ApiError::BadRequest(
+            "Slug: 3–64 символа, строчные латинские буквы, цифры и дефис".to_string(),
+        ));
+    }
+    if matches!(slug.as_str(), "featured" | "popular" | "new" | "updated") {
+        return Err(ApiError::BadRequest(
+            "Этот slug зарезервирован для автоматических подборок".to_string(),
+        ));
+    }
+    let title = body.title.trim();
+    if title.chars().count() < 3 || title.chars().count() > 120 {
+        return Err(ApiError::BadRequest(
+            "Название подборки должно быть от 3 до 120 символов".to_string(),
+        ));
+    }
+    let description = body.description.trim();
+    if description.chars().count() > 1000 {
+        return Err(ApiError::BadRequest(
+            "Описание подборки слишком длинное".to_string(),
+        ));
+    }
+
+    let exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM collections WHERE slug = $1)")
+            .bind(&slug)
+            .fetch_one(&state.pool)
+            .await?;
+    if exists {
+        return Err(ApiError::Conflict(
+            "Подборка с таким slug уже существует".to_string(),
+        ));
+    }
+
+    let mut mode_ids = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for mode_slug in body
+        .mode_slugs
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        if !seen.insert(mode_slug.to_string()) {
+            continue;
+        }
+        let mode_id = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM modes WHERE slug = $1 AND status = 'published'",
+        )
+        .bind(mode_slug)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!("Опубликованный режим {mode_slug} не найден"))
+        })?;
+        mode_ids.push(mode_id);
+    }
+
+    let collection_id = Uuid::new_v4();
+    let mut tx = state.pool.begin().await?;
+    sqlx::query(
+        "INSERT INTO collections (id, slug, title, description, status, sort_order) VALUES ($1, $2, $3, $4, 'published', $5)",
+    )
+    .bind(collection_id)
+    .bind(&slug)
+    .bind(title)
+    .bind(description)
+    .bind(body.sort_order.unwrap_or(0))
+    .execute(&mut *tx)
+    .await?;
+
+    for (index, mode_id) in mode_ids.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO collection_modes (collection_id, mode_id, sort_order) VALUES ($1, $2, $3)",
+        )
+        .bind(collection_id)
+        .bind(mode_id)
+        .bind(index as i32)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "created".to_string(),
+    }))
+}
+
+pub async fn delete_collection(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(collection_id): Path<Uuid>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    auth::require_admin(&state.pool, &headers).await?;
+    let deleted = sqlx::query("DELETE FROM collections WHERE id = $1")
+        .bind(collection_id)
+        .execute(&state.pool)
+        .await?;
+    if deleted.rows_affected() == 0 {
+        return Err(ApiError::NotFound("Подборка не найдена".to_string()));
+    }
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "deleted".to_string(),
+    }))
 }
 
 pub async fn history(

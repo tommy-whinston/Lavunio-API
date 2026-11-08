@@ -131,6 +131,14 @@ pub fn router() -> Router<AppState> {
         )
         .route("/v1/admin/moderation/queue", get(admin::queue))
         .route("/v1/admin/moderation/history", get(admin::history))
+        .route(
+            "/v1/admin/collections",
+            get(admin::collections).post(admin::create_collection),
+        )
+        .route(
+            "/v1/admin/collections/{id}",
+            delete(admin::delete_collection),
+        )
         .route("/v1/admin/reviews", get(admin::reviews))
         .route(
             "/v1/admin/reviews/{id}/approve",

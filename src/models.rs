@@ -138,6 +138,31 @@ pub struct CollectionSection {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 #[serde(rename_all = "camelCase")]
+pub struct AdminCollectionItem {
+    pub id: Uuid,
+    pub slug: String,
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub sort_order: i32,
+    pub mode_slugs: Vec<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateCollectionRequest {
+    pub slug: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub mode_slugs: Vec<String>,
+    pub sort_order: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct FollowedAuthor {
     pub id: Uuid,
     pub username: String,

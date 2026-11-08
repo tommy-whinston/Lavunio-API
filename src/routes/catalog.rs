@@ -332,8 +332,62 @@ pub async fn catalog(
     }))
 }
 
+#[derive(Debug, FromRow)]
+struct ManualCollectionRow {
+    id: Uuid,
+    slug: String,
+    title: String,
+}
+
 fn mode_rating(mode: &ModeSummary) -> f64 {
     mode.rating.unwrap_or(0.0)
+}
+
+async fn manual_collections(pool: &PgPool) -> Result<Vec<CollectionSection>, ApiError> {
+    let collections = sqlx::query_as::<_, ManualCollectionRow>(
+        r#"
+        SELECT id, slug, title
+        FROM collections
+        WHERE status = 'published'
+        ORDER BY sort_order, created_at DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut sections = Vec::new();
+    for collection in collections {
+        let rows = sqlx::query_as::<_, ModeRow>(
+            r#"
+            SELECT m.id, m.slug, m.title, m.short_description, m.description, m.status,
+                   m.cover_url, m.trailer_url, m.mc_version, m.loader, m.loader_version,
+                   m.size_label, m.created_at, m.updated_at,
+                   u.id AS author_id, u.username AS author_username,
+                   u.display_name AS author_name, u.avatar_url AS author_avatar
+            FROM collection_modes cm
+            JOIN modes m ON m.id = cm.mode_id
+            JOIN users u ON u.id = m.author_id
+            WHERE cm.collection_id = $1 AND m.status = 'published'
+            ORDER BY cm.sort_order, m.title
+            "#,
+        )
+        .bind(collection.id)
+        .fetch_all(pool)
+        .await?;
+
+        let mut modes = Vec::with_capacity(rows.len());
+        for row in rows {
+            modes.push(mode_summary(pool, row).await?);
+        }
+        if !modes.is_empty() {
+            sections.push(CollectionSection {
+                id: collection.slug,
+                title: collection.title,
+                modes,
+            });
+        }
+    }
+    Ok(sections)
 }
 
 pub async fn collections(
@@ -361,8 +415,9 @@ pub async fn collections(
         modes.push(mode_summary(&state.pool, row).await?);
     }
 
+    let mut sections = manual_collections(&state.pool).await?;
     if modes.is_empty() {
-        return Ok(Json(Vec::new()));
+        return Ok(Json(sections));
     }
 
     let mut popular = modes.clone();
@@ -397,28 +452,27 @@ pub async fn collections(
     }
     featured.truncate(6);
 
-    Ok(Json(vec![
-        CollectionSection {
-            id: "featured".to_string(),
-            title: "Рекомендуем".to_string(),
-            modes: featured,
-        },
-        CollectionSection {
-            id: "popular".to_string(),
-            title: "Популярное".to_string(),
-            modes: popular,
-        },
-        CollectionSection {
-            id: "new".to_string(),
-            title: "Новинки".to_string(),
-            modes: newest,
-        },
-        CollectionSection {
-            id: "updated".to_string(),
-            title: "Обновления".to_string(),
-            modes: updated,
-        },
-    ]))
+    sections.push(CollectionSection {
+        id: "featured".to_string(),
+        title: "Рекомендуем".to_string(),
+        modes: featured,
+    });
+    sections.push(CollectionSection {
+        id: "popular".to_string(),
+        title: "Популярное".to_string(),
+        modes: popular,
+    });
+    sections.push(CollectionSection {
+        id: "new".to_string(),
+        title: "Новинки".to_string(),
+        modes: newest,
+    });
+    sections.push(CollectionSection {
+        id: "updated".to_string(),
+        title: "Обновления".to_string(),
+        modes: updated,
+    });
+    Ok(Json(sections))
 }
 
 pub async fn mode_detail(

@@ -227,6 +227,102 @@ async fn catalog_returns_only_published_modes(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn admin_manages_manual_collections(pool: PgPool) {
+    prepare(&pool).await;
+    let (author_id, _) = create_user_token(&pool, "collection-author", "author").await;
+    let (_, admin_token) = create_user_token(&pool, "collection-admin", "admin").await;
+    let (_, player_token) = create_user_token(&pool, "collection-player", "player").await;
+
+    for slug in ["collection-one", "collection-two"] {
+        sqlx::query(
+            "INSERT INTO modes (id, slug, title, status, author_id) VALUES ($1, $2, $2, 'published', $3)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(slug)
+        .bind(author_id)
+        .execute(&pool)
+        .await
+        .expect("mode");
+    }
+
+    let (state, _dir) = test_state(pool);
+    let app = app(state);
+
+    let (status, denied) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/admin/collections",
+        Some(&player_token),
+        Some(json!({
+            "slug": "staff-picks",
+            "title": "Выбор редакции",
+            "modeSlugs": ["collection-one"]
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{denied}");
+
+    let (status, created) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/admin/collections",
+        Some(&admin_token),
+        Some(json!({
+            "slug": "staff-picks",
+            "title": "Выбор редакции",
+            "description": "Лучшее в каталоге",
+            "modeSlugs": ["collection-two", "collection-one"],
+            "sortOrder": 1
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+
+    let (status, collections) = send(app.clone(), Method::GET, "/v1/collections", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{collections}");
+    let section = collections
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|section| section["id"] == "staff-picks")
+        .expect("manual collection");
+    assert_eq!(section["title"], "Выбор редакции");
+    assert_eq!(section["modes"][0]["slug"], "collection-two");
+    assert_eq!(section["modes"][1]["slug"], "collection-one");
+
+    let (status, admin_collections) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/admin/collections",
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{admin_collections}");
+    assert_eq!(admin_collections[0]["slug"], "staff-picks");
+    assert_eq!(admin_collections[0]["modeSlugs"][0], "collection-two");
+    let collection_id = admin_collections[0]["id"].as_str().expect("collection id");
+
+    let (status, deleted) = send(
+        app.clone(),
+        Method::DELETE,
+        &format!("/v1/admin/collections/{collection_id}"),
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{deleted}");
+
+    let (status, collections) = send(app, Method::GET, "/v1/collections", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{collections}");
+    assert!(!collections
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|section| section["id"] == "staff-picks"));
+}
+
+#[sqlx::test]
 async fn follows_and_feed_return_author_updates(pool: PgPool) {
     prepare(&pool).await;
     let (author_id, author_token) = create_user_token(&pool, "follow-author", "author").await;
