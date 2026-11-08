@@ -136,6 +136,16 @@ async fn mode_summary(pool: &PgPool, row: ModeRow) -> Result<ModeSummary, ApiErr
     .bind(row.id)
     .fetch_all(pool)
     .await?;
+    let (rating, reviews_count) = sqlx::query_as::<_, (Option<f64>, i64)>(
+        r#"
+        SELECT AVG(rating)::float8, COUNT(*)
+        FROM reviews
+        WHERE mode_id = $1 AND status = 'published'
+        "#,
+    )
+    .bind(row.id)
+    .fetch_one(pool)
+    .await?;
     Ok(ModeSummary {
         id: row.id,
         slug: row.slug,
@@ -149,6 +159,8 @@ async fn mode_summary(pool: &PgPool, row: ModeRow) -> Result<ModeSummary, ApiErr
         loader_version: row.loader_version,
         size: row.size_label,
         installs,
+        rating,
+        reviews_count,
         screenshots,
         author: UserSummary {
             id: row.author_id,

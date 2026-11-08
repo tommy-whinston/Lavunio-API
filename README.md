@@ -29,7 +29,12 @@
   - Элемент каталога содержит `installs` и `screenshots` последнего опубликованного релиза.
 - `GET /v1/modes/{slug}` — карточка режима.
 - `GET /v1/modes/{slug}/releases` — опубликованные релизы с файлами.
+- `GET /v1/modes/{slug}/reviews` — опубликованные отзывы и средний рейтинг.
+- `POST /v1/modes/{slug}/reviews` — оставить или обновить свой отзыв.
+- `DELETE /v1/me/reviews/{slug}` — удалить свой отзыв.
 - `POST /v1/modes/{slug}/events` — события скачивания, установки и обновления для статистики.
+- `GET /v1/me/wishlist` — список желаемого.
+- `POST /v1/me/wishlist/{slug}` — добавить в список желаемого; `DELETE` — убрать.
 - `GET /v1/authors/{slug}` — профиль автора и его режимы.
 - `GET /v1/publisher/modes` — режимы текущего автора с релизами, файлами и статистикой.
 - `POST /v1/publisher/modes` — создать черновик режима.

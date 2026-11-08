@@ -662,6 +662,149 @@ async fn moderation_rejects_hides_and_logs_actions(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn wishlist_and_reviews_work(pool: PgPool) {
+    prepare(&pool).await;
+    let (user_id, token) = create_user_token(&pool, "community-user", "player").await;
+    let (_, author_token) = create_user_token(&pool, "community-author", "author").await;
+    let (author_id, _) = create_user_token(&pool, "community-author-2", "author").await;
+
+    sqlx::query(
+        "INSERT INTO modes (id, slug, title, description, status, author_id) VALUES ($1, 'community-mode', 'Community Mode', 'Test', 'published', $2)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(author_id)
+    .execute(&pool)
+    .await
+    .expect("mode");
+
+    let (state, _dir) = test_state(pool);
+    let app = app(state);
+
+    let (status, body) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/me/wishlist/community-mode",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, list) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/me/wishlist",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list, json!(["community-mode"]));
+
+    let (status, body) = send(
+        app.clone(),
+        Method::DELETE,
+        "/v1/me/wishlist/community-mode",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, list) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/me/wishlist",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list, json!([]));
+
+    let (status, empty) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/modes/community-mode/reviews",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{empty}");
+    assert_eq!(empty["count"], 0);
+
+    let (status, created) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/modes/community-mode/reviews",
+        Some(&token),
+        Some(json!({ "rating": 5, "text": "Отличный режим" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    assert_eq!(created["count"], 1);
+    assert_eq!(created["averageRating"], 5.0);
+    assert_eq!(created["items"][0]["authorUsername"], "community-user");
+
+    let (status, updated) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/modes/community-mode/reviews",
+        Some(&token),
+        Some(json!({ "rating": 3, "text": "Передумал" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{updated}");
+    assert_eq!(updated["count"], 1);
+    assert_eq!(updated["averageRating"], 3.0);
+
+    let (status, catalog) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/catalog?q=Community",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{catalog}");
+    assert_eq!(catalog["items"][0]["rating"], 3.0);
+    assert_eq!(catalog["items"][0]["reviewsCount"], 1);
+
+    let (status, invalid) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/modes/community-mode/reviews",
+        Some(&token),
+        Some(json!({ "rating": 6, "text": "bad" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid}");
+
+    let (status, deleted) = send(
+        app.clone(),
+        Method::DELETE,
+        "/v1/me/reviews/community-mode",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{deleted}");
+
+    let (status, empty) = send(
+        app,
+        Method::GET,
+        "/v1/modes/community-mode/reviews",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{empty}");
+    assert_eq!(empty["count"], 0);
+
+    let _ = (user_id, author_token);
+}
+
+#[sqlx::test]
 async fn players_cannot_create_modes(pool: PgPool) {
     prepare(&pool).await;
     let (_, token) = create_user_token(&pool, "player", "player").await;

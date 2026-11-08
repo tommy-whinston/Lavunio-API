@@ -1,12 +1,13 @@
 pub mod admin;
 pub mod auth;
 pub mod catalog;
+pub mod community;
 pub mod game_auth;
 pub mod health;
 pub mod publisher;
 
 use axum::extract::DefaultBodyLimit;
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 
 use crate::AppState;
@@ -63,6 +64,16 @@ pub fn router() -> Router<AppState> {
         .route("/v1/modes/{slug}", get(catalog::mode_detail))
         .route("/v1/modes/{slug}/releases", get(catalog::releases))
         .route("/v1/modes/{slug}/events", post(publisher::record_event))
+        .route(
+            "/v1/modes/{slug}/reviews",
+            get(community::reviews).post(community::submit_review),
+        )
+        .route("/v1/me/wishlist", get(community::wishlist))
+        .route(
+            "/v1/me/wishlist/{slug}",
+            post(community::add_wishlist).delete(community::remove_wishlist),
+        )
+        .route("/v1/me/reviews/{slug}", delete(community::delete_review))
         .route("/v1/authors/{slug}", get(catalog::author))
         .route(
             "/v1/publisher/modes",

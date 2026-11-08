@@ -106,6 +106,8 @@ pub struct ModeSummary {
     pub loader_version: Option<String>,
     pub size: Option<String>,
     pub installs: i64,
+    pub rating: Option<f64>,
+    pub reviews_count: i64,
     pub screenshots: Vec<String>,
     pub author: UserSummary,
     pub tags: Vec<Tag>,
@@ -317,6 +319,34 @@ pub struct ModeEventRequest {
 #[serde(rename_all = "camelCase")]
 pub struct CoverResponse {
     pub cover_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewItem {
+    pub id: Uuid,
+    pub rating: i16,
+    pub text: String,
+    pub author_name: String,
+    pub author_username: String,
+    pub avatar_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewListResponse {
+    pub average_rating: Option<f64>,
+    pub count: i64,
+    pub items: Vec<ReviewItem>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewRequest {
+    pub rating: i16,
+    #[serde(default)]
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
