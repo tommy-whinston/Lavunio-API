@@ -159,6 +159,27 @@ pub struct FeedItem {
     pub author_name: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct NewsItem {
+    pub id: Uuid,
+    pub mode_id: Option<Uuid>,
+    pub mode_slug: Option<String>,
+    pub mode_title: Option<String>,
+    pub title: String,
+    pub body: String,
+    pub author_name: String,
+    pub author_username: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewsRequest {
+    pub title: String,
+    pub body: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthorResponse {

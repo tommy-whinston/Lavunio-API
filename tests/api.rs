@@ -315,6 +315,91 @@ async fn follows_and_feed_return_author_updates(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn news_store_and_mode_announcements(pool: PgPool) {
+    prepare(&pool).await;
+    let (author_id, author_token) = create_user_token(&pool, "news-author", "author").await;
+    let (_, admin_token) = create_user_token(&pool, "news-admin", "admin").await;
+    let (_, player_token) = create_user_token(&pool, "news-player", "player").await;
+
+    let mode_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO modes (id, slug, title, status, author_id) VALUES ($1, 'news-mode', 'News Mode', 'published', $2)",
+    )
+    .bind(mode_id)
+    .bind(author_id)
+    .execute(&pool)
+    .await
+    .expect("mode");
+
+    let (state, _dir) = test_state(pool);
+    let app = app(state);
+
+    let (status, published) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/news",
+        Some(&admin_token),
+        Some(json!({ "title": "Запуск магазина", "body": "Магазин Lavunio открыт." })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{published}");
+
+    let (status, store_news) = send(app.clone(), Method::GET, "/v1/news", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{store_news}");
+    assert_eq!(store_news.as_array().unwrap().len(), 1);
+    assert_eq!(store_news[0]["title"], "Запуск магазина");
+    assert!(store_news[0]["modeId"].is_null());
+
+    let (status, mode_news) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/publisher/modes/{mode_id}/news"),
+        Some(&author_token),
+        Some(json!({ "title": "Новая версия", "body": "Добавлены новые механики." })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{mode_news}");
+
+    let (status, mode_news) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/modes/news-mode/news",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{mode_news}");
+    assert_eq!(mode_news.as_array().unwrap().len(), 1);
+    assert_eq!(mode_news[0]["title"], "Новая версия");
+    assert_eq!(mode_news[0]["modeSlug"], "news-mode");
+
+    let (status, denied) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/publisher/modes/{mode_id}/news"),
+        Some(&player_token),
+        Some(json!({ "title": "Чужая новость", "body": "Не должно пройти." })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{denied}");
+
+    let news_id = store_news[0]["id"].as_str().expect("news id");
+    let (status, deleted) = send(
+        app.clone(),
+        Method::DELETE,
+        &format!("/v1/news/{news_id}"),
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{deleted}");
+
+    let (status, store_news) = send(app, Method::GET, "/v1/news", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{store_news}");
+    assert_eq!(store_news, json!([]));
+}
+
+#[sqlx::test]
 async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
     prepare(&pool).await;
     let (_, token) = create_user_token(&pool, "admin", "admin").await;

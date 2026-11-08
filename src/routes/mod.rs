@@ -4,6 +4,7 @@ pub mod catalog;
 pub mod community;
 pub mod game_auth;
 pub mod health;
+pub mod news;
 pub mod publisher;
 
 use axum::extract::DefaultBodyLimit;
@@ -62,7 +63,13 @@ pub fn router() -> Router<AppState> {
         )
         .route("/v1/catalog", get(catalog::catalog))
         .route("/v1/collections", get(catalog::collections))
+        .route(
+            "/v1/news",
+            get(news::store_news).post(news::create_store_news),
+        )
+        .route("/v1/news/{id}", delete(news::delete_news))
         .route("/v1/modes/{slug}", get(catalog::mode_detail))
+        .route("/v1/modes/{slug}/news", get(news::mode_news))
         .route("/v1/modes/{slug}/releases", get(catalog::releases))
         .route("/v1/modes/{slug}/events", post(publisher::record_event))
         .route("/v1/modes/{slug}/reports", post(community::submit_report))
@@ -90,6 +97,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/v1/publisher/modes/{id}/releases",
             post(publisher::create_release),
+        )
+        .route(
+            "/v1/publisher/modes/{id}/news",
+            post(news::create_mode_news),
         )
         .route("/v1/publisher/modes/{id}/stats", get(publisher::stats))
         .route(

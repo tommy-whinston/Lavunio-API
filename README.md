@@ -26,6 +26,9 @@
 - `/authserver/*` и `/sessionserver/*` — Yggdrasil-совместимые endpoints для Minecraft.
 - `GET /v1/catalog` — каталог опубликованных режимов с поиском, тегом и пагинацией.
 - `GET /v1/collections` — подборки: рекомендуем, популярное, новинки, обновления.
+- `GET /v1/news` — новости магазина; `POST /v1/news` — опубликовать новость (админ).
+- `GET /v1/modes/{slug}/news` — новости режима; `POST /v1/publisher/modes/{id}/news` — новость от автора.
+- `DELETE /v1/news/{id}` — удалить новость (автор или админ).
   - Параметры: `q`, `tag`, `mcVersion`, `loader`, `author`, `sort` (`updated`, `newest`, `title`, `installs`), `page`, `limit`.
   - Элемент каталога содержит `installs` и `screenshots` последнего опубликованного релиза.
 - `GET /v1/modes/{slug}` — карточка режима, включая трейлер и скриншоты.
