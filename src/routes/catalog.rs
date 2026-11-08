@@ -13,9 +13,14 @@ use crate::models::{
 use crate::AppState;
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CatalogQuery {
     pub q: Option<String>,
     pub tag: Option<String>,
+    pub mc_version: Option<String>,
+    pub loader: Option<String>,
+    pub author: Option<String>,
+    pub sort: Option<String>,
     pub page: Option<i64>,
     pub limit: Option<i64>,
 }
@@ -109,6 +114,28 @@ async fn mode_summary(pool: &PgPool, row: ModeRow) -> Result<ModeSummary, ApiErr
     let tags = tags_for(pool, row.id).await?;
     let latest_release = latest_release(pool, row.id).await?;
     let build = latest_build(pool, row.id).await?;
+    let installs = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM mode_events WHERE mode_id = $1 AND event = 'install'",
+    )
+    .bind(row.id)
+    .fetch_one(pool)
+    .await?;
+    let screenshots = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT a.url
+        FROM release_assets a
+        JOIN releases r ON r.id = a.release_id
+        WHERE r.mode_id = $1
+          AND r.status = 'published'
+          AND a.kind = 'screenshot'
+          AND a.url <> ''
+        ORDER BY r.published_at DESC NULLS LAST, a.created_at
+        LIMIT 12
+        "#,
+    )
+    .bind(row.id)
+    .fetch_all(pool)
+    .await?;
     Ok(ModeSummary {
         id: row.id,
         slug: row.slug,
@@ -121,6 +148,8 @@ async fn mode_summary(pool: &PgPool, row: ModeRow) -> Result<ModeSummary, ApiErr
         loader: row.loader,
         loader_version: row.loader_version,
         size: row.size_label,
+        installs,
+        screenshots,
         author: UserSummary {
             id: row.author_id,
             username: row.author_username,
@@ -179,8 +208,19 @@ pub async fn catalog(
     let offset = (page - 1) * limit;
     let search = query.q.unwrap_or_default().trim().to_string();
     let tag = query.tag.unwrap_or_default().trim().to_string();
+    let mc_version = query.mc_version.unwrap_or_default().trim().to_string();
+    let loader = query.loader.unwrap_or_default().trim().to_lowercase();
+    let author = query.author.unwrap_or_default().trim().to_string();
+    let order = match query.sort.as_deref().unwrap_or("updated") {
+        "title" => "m.title ASC",
+        "newest" => "m.created_at DESC",
+        "installs" => {
+            "(SELECT COUNT(*) FROM mode_events e WHERE e.mode_id = m.id AND e.event = 'install') DESC, m.updated_at DESC"
+        }
+        _ => "m.updated_at DESC",
+    };
 
-    let rows = sqlx::query_as::<_, ModeRow>(
+    let sql = format!(
         r#"
         SELECT m.id, m.slug, m.title, m.short_description, m.description, m.status,
                m.cover_url, m.mc_version, m.loader, m.loader_version, m.size_label,
@@ -205,21 +245,34 @@ pub async fn catalog(
                   WHERE mt.mode_id = m.id AND t.slug = $2
               )
           )
-        ORDER BY m.updated_at DESC
-        LIMIT $3 OFFSET $4
-        "#,
-    )
-    .bind(&search)
-    .bind(&tag)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+          AND ($3 = '' OR m.mc_version = $3)
+          AND ($4 = '' OR m.loader = $4)
+          AND (
+              $5 = ''
+              OR u.username ILIKE '%' || $5 || '%'
+              OR u.display_name ILIKE '%' || $5 || '%'
+          )
+        ORDER BY {order}
+        LIMIT $6 OFFSET $7
+        "#
+    );
+
+    let rows = sqlx::query_as::<_, ModeRow>(&sql)
+        .bind(&search)
+        .bind(&tag)
+        .bind(&mc_version)
+        .bind(&loader)
+        .bind(&author)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
 
     let total = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*)
         FROM modes m
+        JOIN users u ON u.id = m.author_id
         WHERE m.status = 'published'
           AND (
               $1 = ''
@@ -236,10 +289,20 @@ pub async fn catalog(
                   WHERE mt.mode_id = m.id AND t.slug = $2
               )
           )
+          AND ($3 = '' OR m.mc_version = $3)
+          AND ($4 = '' OR m.loader = $4)
+          AND (
+              $5 = ''
+              OR u.username ILIKE '%' || $5 || '%'
+              OR u.display_name ILIKE '%' || $5 || '%'
+          )
         "#,
     )
     .bind(&search)
     .bind(&tag)
+    .bind(&mc_version)
+    .bind(&loader)
+    .bind(&author)
     .fetch_one(&state.pool)
     .await?;
 

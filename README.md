@@ -25,6 +25,8 @@
 - `PUT /v1/me/cape` — загрузить плащ; `DELETE /v1/me/cape` — удалить.
 - `/authserver/*` и `/sessionserver/*` — Yggdrasil-совместимые endpoints для Minecraft.
 - `GET /v1/catalog` — каталог опубликованных режимов с поиском, тегом и пагинацией.
+  - Параметры: `q`, `tag`, `mcVersion`, `loader`, `author`, `sort` (`updated`, `newest`, `title`, `installs`), `page`, `limit`.
+  - Элемент каталога содержит `installs` и `screenshots` последнего опубликованного релиза.
 - `GET /v1/modes/{slug}` — карточка режима.
 - `GET /v1/modes/{slug}/releases` — опубликованные релизы с файлами.
 - `POST /v1/modes/{slug}/events` — события скачивания, установки и обновления для статистики.

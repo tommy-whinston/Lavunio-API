@@ -231,6 +231,8 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
             "title": "API Test",
             "shortDescription": "Test mode",
             "description": "Created by integration test",
+            "mcVersion": "1.12.2",
+            "loader": "forge",
             "tags": ["test", "api"]
         })),
     )
@@ -295,6 +297,34 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
     assert_eq!(asset["manifest"]["files"]["mods/test.jar"]["size"], 11);
     assert!(asset["url"].as_str().unwrap().contains("/uploads/"));
 
+    let (status, shot_upload) = send(
+        app.clone(),
+        Method::POST,
+        &format!("/v1/publisher/releases/{release_id}/assets/upload-url"),
+        Some(&token),
+        Some(json!({
+            "kind": "screenshot",
+            "fileName": "screen.png",
+            "size": 9
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{shot_upload}");
+    let shot_url = shot_upload["uploadUrl"].as_str().expect("shot upload url");
+    let shot_path = shot_url
+        .strip_prefix("http://test")
+        .expect("test public base url");
+    let (status, shot) = send_bytes(
+        app.clone(),
+        Method::PUT,
+        shot_path,
+        &token,
+        Bytes::from_static(b"shot-data"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{shot}");
+    assert!(shot["url"].as_str().unwrap().contains("/uploads/"));
+
     let (status, submitted) = send(
         app.clone(),
         Method::POST,
@@ -339,6 +369,11 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
     assert_eq!(status, StatusCode::OK, "{catalog}");
     assert_eq!(catalog["total"], 1);
     assert_eq!(catalog["items"][0]["slug"], "api-test");
+    assert_eq!(catalog["items"][0]["mcVersion"], "1.12.2");
+    assert_eq!(
+        catalog["items"][0]["screenshots"].as_array().unwrap().len(),
+        1
+    );
 
     let (status, mine) = send(
         app.clone(),
@@ -383,6 +418,18 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
     assert_eq!(stats["installs"], 1);
     assert_eq!(stats["updates"], 1);
     assert_eq!(stats["uniqueUsers"], 1);
+
+    let (status, filtered) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/catalog?mcVersion=1.12.2&loader=forge&sort=installs",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{filtered}");
+    assert_eq!(filtered["total"], 1);
+    assert_eq!(filtered["items"][0]["installs"], 1);
 
     let (status, cover) = send_bytes(
         app.clone(),

@@ -105,6 +105,8 @@ pub struct ModeSummary {
     pub loader: String,
     pub loader_version: Option<String>,
     pub size: Option<String>,
+    pub installs: i64,
+    pub screenshots: Vec<String>,
     pub author: UserSummary,
     pub tags: Vec<Tag>,
     pub latest_release: Option<ReleaseSummary>,
