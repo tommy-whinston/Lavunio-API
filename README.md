@@ -34,6 +34,9 @@
 - `POST /v1/modes/{slug}/reviews` — оставить или обновить свой отзыв.
 - `DELETE /v1/me/reviews/{slug}` — удалить свой отзыв.
 - `POST /v1/modes/{slug}/reports` — пожаловаться на режим.
+- `GET /v1/me/follows` — авторы, на которых подписан игрок.
+- `POST /v1/follows/{username}` — подписаться на автора; `DELETE` — отписаться.
+- `GET /v1/me/feed` — последние релизы авторов из подписок.
 - `GET /v1/admin/reports?status=open` — очередь жалоб.
 - `POST /v1/admin/reports/{id}/close` — закрыть жалобу.
 - `POST /v1/modes/{slug}/events` — события скачивания, установки и обновления для статистики.

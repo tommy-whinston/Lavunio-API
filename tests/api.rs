@@ -227,6 +227,94 @@ async fn catalog_returns_only_published_modes(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn follows_and_feed_return_author_updates(pool: PgPool) {
+    prepare(&pool).await;
+    let (author_id, author_token) = create_user_token(&pool, "follow-author", "author").await;
+    let (_, token) = create_user_token(&pool, "follow-player", "player").await;
+
+    let mode_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO modes (id, slug, title, status, author_id) VALUES ($1, 'follow-mode', 'Follow', 'published', $2)",
+    )
+    .bind(mode_id)
+    .bind(author_id)
+    .execute(&pool)
+    .await
+    .expect("mode");
+    sqlx::query(
+        "INSERT INTO releases (id, mode_id, version, status, published_at) VALUES ($1, $2, '1.2.3', 'published', now())",
+    )
+    .bind(Uuid::new_v4())
+    .bind(mode_id)
+    .execute(&pool)
+    .await
+    .expect("release");
+
+    let (state, _dir) = test_state(pool);
+    let app = app(state);
+
+    let (status, body) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/follows/follow-author",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, follows) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/me/follows",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{follows}");
+    assert_eq!(follows.as_array().unwrap().len(), 1);
+    assert_eq!(follows[0]["username"], "follow-author");
+    assert_eq!(follows[0]["followersCount"], 1);
+
+    let (status, feed) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/me/feed?limit=10",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{feed}");
+    assert_eq!(feed.as_array().unwrap().len(), 1);
+    assert_eq!(feed[0]["modeSlug"], "follow-mode");
+    assert_eq!(feed[0]["version"], "1.2.3");
+
+    let (status, self_follow) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/follows/follow-author",
+        Some(&author_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{self_follow}");
+
+    let (status, unfollowed) = send(
+        app.clone(),
+        Method::DELETE,
+        "/v1/follows/follow-author",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{unfollowed}");
+
+    let (status, follows) = send(app, Method::GET, "/v1/me/follows", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK, "{follows}");
+    assert_eq!(follows, json!([]));
+}
+
+#[sqlx::test]
 async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
     prepare(&pool).await;
     let (_, token) = create_user_token(&pool, "admin", "admin").await;

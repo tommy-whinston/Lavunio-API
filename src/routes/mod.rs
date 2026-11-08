@@ -75,6 +75,12 @@ pub fn router() -> Router<AppState> {
             "/v1/me/wishlist/{slug}",
             post(community::add_wishlist).delete(community::remove_wishlist),
         )
+        .route("/v1/me/follows", get(community::follows))
+        .route("/v1/me/feed", get(community::feed))
+        .route(
+            "/v1/follows/{username}",
+            post(community::follow_author).delete(community::unfollow_author),
+        )
         .route("/v1/me/reviews/{slug}", delete(community::delete_review))
         .route("/v1/authors/{slug}", get(catalog::author))
         .route(

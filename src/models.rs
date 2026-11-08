@@ -134,6 +134,29 @@ pub struct CollectionSection {
     pub modes: Vec<ModeSummary>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct FollowedAuthor {
+    pub id: Uuid,
+    pub username: String,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub followers_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedItem {
+    pub mode_slug: String,
+    pub mode_title: String,
+    pub version: String,
+    pub changelog: String,
+    pub published_at: Option<DateTime<Utc>>,
+    pub cover_url: Option<String>,
+    pub author_username: String,
+    pub author_name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthorResponse {

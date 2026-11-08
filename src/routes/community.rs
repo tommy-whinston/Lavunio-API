@@ -1,13 +1,23 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::Json;
+use serde::Deserialize;
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::auth;
 use crate::error::ApiError;
-use crate::models::{ReportRequest, ReviewItem, ReviewListResponse, ReviewRequest, SimpleStatus};
+use crate::models::{
+    FeedItem, FollowedAuthor, ReportRequest, ReviewItem, ReviewListResponse, ReviewRequest,
+    SimpleStatus,
+};
 use crate::AppState;
+
+#[derive(Debug, Deserialize)]
+pub struct FeedQuery {
+    #[serde(default)]
+    limit: Option<i64>,
+}
 
 #[derive(Debug, FromRow)]
 struct ReviewStatsRow {
@@ -180,6 +190,104 @@ pub async fn delete_review(
         ok: true,
         status: "deleted".to_string(),
     }))
+}
+
+async fn user_id_by_username(pool: &PgPool, username: &str) -> Result<Uuid, ApiError> {
+    sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE lower(username) = lower($1)")
+        .bind(username.trim())
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("Автор не найден".to_string()))
+}
+
+pub async fn follows(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<FollowedAuthor>>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let items = sqlx::query_as::<_, FollowedAuthor>(
+        r#"
+        SELECT u.id, u.username, u.display_name, u.avatar_url,
+               (SELECT COUNT(*) FROM follows f2 WHERE f2.author_id = u.id) AS followers_count
+        FROM follows f
+        JOIN users u ON u.id = f.author_id
+        WHERE f.user_id = $1
+        ORDER BY f.created_at DESC
+        "#,
+    )
+    .bind(user.id)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(items))
+}
+
+pub async fn follow_author(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(username): Path<String>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let author_id = user_id_by_username(&state.pool, &username).await?;
+    if author_id == user.id {
+        return Err(ApiError::BadRequest(
+            "Нельзя подписаться на себя".to_string(),
+        ));
+    }
+    sqlx::query("INSERT INTO follows (user_id, author_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+        .bind(user.id)
+        .bind(author_id)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "following".to_string(),
+    }))
+}
+
+pub async fn unfollow_author(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(username): Path<String>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let author_id = user_id_by_username(&state.pool, &username).await?;
+    sqlx::query("DELETE FROM follows WHERE user_id = $1 AND author_id = $2")
+        .bind(user.id)
+        .bind(author_id)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "unfollowed".to_string(),
+    }))
+}
+
+pub async fn feed(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<FeedQuery>,
+) -> Result<Json<Vec<FeedItem>>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let limit = query.limit.unwrap_or(20).clamp(1, 50);
+    let items = sqlx::query_as::<_, FeedItem>(
+        r#"
+        SELECT m.slug AS mode_slug, m.title AS mode_title, r.version, r.changelog,
+               r.published_at, m.cover_url,
+               u.username AS author_username, u.display_name AS author_name
+        FROM follows f
+        JOIN modes m ON m.author_id = f.author_id AND m.status = 'published'
+        JOIN releases r ON r.mode_id = m.id AND r.status = 'published'
+        JOIN users u ON u.id = f.author_id
+        WHERE f.user_id = $1
+        ORDER BY r.published_at DESC NULLS LAST, r.created_at DESC
+        LIMIT $2
+        "#,
+    )
+    .bind(user.id)
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(items))
 }
 
 pub async fn submit_report(
