@@ -2,6 +2,7 @@ use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use axum::Json;
+use image::ImageFormat;
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
@@ -9,9 +10,9 @@ use uuid::Uuid;
 use crate::auth::{self, AuthUser};
 use crate::error::ApiError;
 use crate::models::{
-    Asset, CompleteAssetRequest, CreateModeRequest, CreateModeResponse, CreateReleaseRequest,
-    CreateReleaseResponse, PublisherMode, PublisherModeRow, Release, SimpleStatus,
-    UploadUrlRequest, UploadUrlResponse,
+    Asset, CompleteAssetRequest, CoverResponse, CreateModeRequest, CreateModeResponse,
+    CreateReleaseRequest, CreateReleaseResponse, ModeEventRequest, PublisherMode, PublisherModeRow,
+    PublisherStats, Release, SimpleStatus, UploadUrlRequest, UploadUrlResponse,
 };
 use crate::storage::{Storage, StorageKind};
 use crate::AppState;
@@ -48,6 +49,33 @@ fn ensure_author(user: &AuthUser) -> Result<(), ApiError> {
         ));
     }
     Ok(())
+}
+
+async fn ensure_mode_owner(pool: &PgPool, user: &AuthUser, mode_id: Uuid) -> Result<(), ApiError> {
+    let author_id = sqlx::query_scalar::<_, Uuid>("SELECT author_id FROM modes WHERE id = $1")
+        .bind(mode_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("Режим не найден".to_string()))?;
+    ensure_owner(user, author_id).await
+}
+
+async fn mode_stats(pool: &PgPool, mode_id: Uuid) -> Result<PublisherStats, ApiError> {
+    let stats = sqlx::query_as::<_, PublisherStats>(
+        r#"
+        SELECT COUNT(*) FILTER (WHERE event = 'download') AS downloads,
+               COUNT(*) FILTER (WHERE event = 'install') AS installs,
+               COUNT(*) FILTER (WHERE event = 'update') AS updates,
+               COUNT(DISTINCT user_id) AS unique_users,
+               MAX(created_at) AS last_event_at
+        FROM mode_events
+        WHERE mode_id = $1
+        "#,
+    )
+    .bind(mode_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(stats)
 }
 
 async fn release_owner(pool: &PgPool, release_id: Uuid) -> Result<ReleaseOwnerRow, ApiError> {
@@ -232,6 +260,7 @@ pub async fn my_modes(
             created_at: row.created_at,
             updated_at: row.updated_at,
             releases,
+            stats: mode_stats(&state.pool, row.id).await?,
         });
     }
 
@@ -579,5 +608,157 @@ pub async fn submit_release(
     Ok(Json(SimpleStatus {
         ok: true,
         status: "pending".to_string(),
+    }))
+}
+
+pub async fn stats(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(mode_id): Path<Uuid>,
+) -> Result<Json<PublisherStats>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    ensure_mode_owner(&state.pool, &user, mode_id).await?;
+    Ok(Json(mode_stats(&state.pool, mode_id).await?))
+}
+
+pub async fn record_event(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(slug): Path<String>,
+    Json(body): Json<ModeEventRequest>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let event = body.event.trim();
+    if !matches!(event, "download" | "install" | "update") {
+        return Err(ApiError::BadRequest(
+            "event: download, install или update".to_string(),
+        ));
+    }
+
+    let mode_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM modes WHERE slug = $1 AND status = 'published'",
+    )
+    .bind(slug.trim())
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("Режим не найден".to_string()))?;
+
+    let release_id = if let Some(version) = body
+        .version
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM releases WHERE mode_id = $1 AND version = $2 ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(mode_id)
+        .bind(version)
+        .fetch_optional(&state.pool)
+        .await?
+    } else {
+        None
+    };
+
+    sqlx::query(
+        "INSERT INTO mode_events (id, mode_id, user_id, release_id, event) VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(mode_id)
+    .bind(user.id)
+    .bind(release_id)
+    .bind(event)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "recorded".to_string(),
+    }))
+}
+
+pub async fn upload_cover(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(mode_id): Path<Uuid>,
+    bytes: Bytes,
+) -> Result<Json<CoverResponse>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    ensure_mode_owner(&state.pool, &user, mode_id).await?;
+    if bytes.len() > 8 * 1024 * 1024 {
+        return Err(ApiError::BadRequest("Обложка больше 8 МБ".to_string()));
+    }
+
+    let format = image::guess_format(&bytes).map_err(|_| {
+        ApiError::BadRequest("Не удалось определить формат изображения".to_string())
+    })?;
+    if !matches!(
+        format,
+        ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::WebP
+    ) {
+        return Err(ApiError::BadRequest(
+            "Обложка должна быть PNG, JPEG или WebP".to_string(),
+        ));
+    }
+    let image = image::load_from_memory_with_format(&bytes, format)
+        .map_err(|_| ApiError::BadRequest("Не удалось прочитать изображение".to_string()))?;
+    if image.width() > 4096 || image.height() > 4096 {
+        return Err(ApiError::BadRequest(
+            "Обложка должна быть не больше 4096×4096".to_string(),
+        ));
+    }
+
+    let output_format = if matches!(format, ImageFormat::Png | ImageFormat::WebP) {
+        ImageFormat::Png
+    } else {
+        ImageFormat::Jpeg
+    };
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut cursor, output_format)
+        .map_err(|_| ApiError::Internal("Не удалось сохранить обложку".to_string()))?;
+    let data = cursor.into_inner();
+    let hash = hex::encode(Sha256::digest(&data));
+    let extension = if output_format == ImageFormat::Png {
+        "png"
+    } else {
+        "jpg"
+    };
+    let content_type = if output_format == ImageFormat::Png {
+        "image/png"
+    } else {
+        "image/jpeg"
+    };
+    let key = format!("covers/{mode_id}-{hash}.{extension}");
+    state
+        .storage
+        .put_bytes(&key, &data, Some(content_type))
+        .await
+        .map_err(ApiError::Internal)?;
+    let url = state.storage.public_url(&key);
+
+    sqlx::query("UPDATE modes SET cover_url = $2, updated_at = now() WHERE id = $1")
+        .bind(mode_id)
+        .bind(&url)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(Json(CoverResponse { cover_url: url }))
+}
+
+pub async fn delete_cover(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(mode_id): Path<Uuid>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    ensure_mode_owner(&state.pool, &user, mode_id).await?;
+    sqlx::query("UPDATE modes SET cover_url = NULL, updated_at = now() WHERE id = $1")
+        .bind(mode_id)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "cover_deleted".to_string(),
     }))
 }

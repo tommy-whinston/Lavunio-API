@@ -274,6 +274,16 @@ pub struct PublisherModeRow {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct PublisherStats {
+    pub downloads: i64,
+    pub installs: i64,
+    pub updates: i64,
+    pub unique_users: i64,
+    pub last_event_at: Option<DateTime<Utc>>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublisherMode {
@@ -291,6 +301,20 @@ pub struct PublisherMode {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub releases: Vec<Release>,
+    pub stats: PublisherStats,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModeEventRequest {
+    pub event: String,
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverResponse {
+    pub cover_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

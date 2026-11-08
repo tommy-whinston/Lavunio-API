@@ -4,6 +4,7 @@ use axum::body::{Body, Bytes};
 use axum::http::{header, Method, Request, StatusCode};
 use axum::Router;
 use http_body_util::BodyExt;
+use image::{ImageEncoder, Rgba, RgbaImage};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -53,6 +54,20 @@ async fn create_user_token(pool: &PgPool, username: &str, role: &str) -> (Uuid, 
     .expect("insert token");
 
     (user_id, token)
+}
+
+fn png_bytes(width: u32, height: u32) -> Vec<u8> {
+    let image = RgbaImage::from_pixel(width, height, Rgba([229, 50, 43, 255]));
+    let mut output = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut output)
+        .write_image(
+            image.as_raw(),
+            width,
+            height,
+            image::ExtendedColorType::Rgba8,
+        )
+        .expect("png encode");
+    output
 }
 
 async fn send(
@@ -325,7 +340,14 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
     assert_eq!(catalog["total"], 1);
     assert_eq!(catalog["items"][0]["slug"], "api-test");
 
-    let (status, mine) = send(app, Method::GET, "/v1/publisher/modes", Some(&token), None).await;
+    let (status, mine) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/publisher/modes",
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{mine}");
     assert_eq!(mine.as_array().unwrap().len(), 1);
     assert_eq!(mine[0]["slug"], "api-test");
@@ -335,6 +357,78 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
         mine[0]["releases"][0]["assets"][0]["manifest"]["files"]["mods/test.jar"]["size"],
         11
     );
+
+    for event in ["download", "install", "update"] {
+        let (status, body) = send(
+            app.clone(),
+            Method::POST,
+            "/v1/modes/api-test/events",
+            Some(&token),
+            Some(json!({ "event": event, "version": "0.1.0" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    let (status, stats) = send(
+        app.clone(),
+        Method::GET,
+        &format!("/v1/publisher/modes/{mode_id}/stats"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{stats}");
+    assert_eq!(stats["downloads"], 1);
+    assert_eq!(stats["installs"], 1);
+    assert_eq!(stats["updates"], 1);
+    assert_eq!(stats["uniqueUsers"], 1);
+
+    let (status, cover) = send_bytes(
+        app.clone(),
+        Method::PUT,
+        &format!("/v1/publisher/modes/{mode_id}/cover"),
+        &token,
+        Bytes::from(png_bytes(512, 256)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{cover}");
+    let cover_url = cover["coverUrl"].as_str().expect("cover url").to_string();
+    assert!(cover_url.contains("/uploads/covers/"));
+
+    let (status, mine) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/publisher/modes",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{mine}");
+    assert_eq!(mine[0]["coverUrl"], cover_url.as_str());
+    assert_eq!(mine[0]["stats"]["downloads"], 1);
+    assert_eq!(mine[0]["stats"]["uniqueUsers"], 1);
+
+    let (status, catalog) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/catalog?q=API%20Test",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{catalog}");
+    assert_eq!(catalog["items"][0]["coverUrl"], cover_url.as_str());
+
+    let (status, deleted) = send(
+        app,
+        Method::DELETE,
+        &format!("/v1/publisher/modes/{mode_id}/cover"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{deleted}");
 }
 
 #[sqlx::test]

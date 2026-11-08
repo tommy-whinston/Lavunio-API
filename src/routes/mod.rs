@@ -62,6 +62,7 @@ pub fn router() -> Router<AppState> {
         .route("/v1/catalog", get(catalog::catalog))
         .route("/v1/modes/{slug}", get(catalog::mode_detail))
         .route("/v1/modes/{slug}/releases", get(catalog::releases))
+        .route("/v1/modes/{slug}/events", post(publisher::record_event))
         .route("/v1/authors/{slug}", get(catalog::author))
         .route(
             "/v1/publisher/modes",
@@ -70,6 +71,13 @@ pub fn router() -> Router<AppState> {
         .route(
             "/v1/publisher/modes/{id}/releases",
             post(publisher::create_release),
+        )
+        .route("/v1/publisher/modes/{id}/stats", get(publisher::stats))
+        .route(
+            "/v1/publisher/modes/{id}/cover",
+            put(publisher::upload_cover)
+                .delete(publisher::delete_cover)
+                .layer(DefaultBodyLimit::max(8 * 1024 * 1024)),
         )
         .route(
             "/v1/publisher/releases/{id}/assets/upload-url",
