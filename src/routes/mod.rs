@@ -26,6 +26,7 @@ pub fn router() -> Router<AppState> {
         .route("/legal/terms", get(crate::legal::terms))
         .route("/legal/privacy", get(crate::legal::privacy))
         .route("/legal/rules", get(crate::legal::rules))
+        .route("/legal/logo.png", get(crate::legal::logo))
         .route("/v1/metrics", get(health::metrics))
         .route("/v1/auth/register", post(auth::register))
         .route("/v1/auth/login", post(auth::login))

@@ -1,5 +1,6 @@
 use axum::extract::Query;
-use axum::response::Html;
+use axum::http::header;
+use axum::response::{Html, IntoResponse};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -13,6 +14,16 @@ fn english(query: &LegalQuery) -> bool {
         .as_deref()
         .map(|value| value.eq_ignore_ascii_case("en"))
         .unwrap_or(false)
+}
+
+pub async fn logo() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, "public, max-age=604800"),
+        ],
+        include_bytes!("legal_logo.png").as_slice(),
+    )
 }
 
 pub async fn terms(Query(query): Query<LegalQuery>) -> Html<String> {
@@ -159,6 +170,7 @@ fn page(
 <meta name="theme-color" content="#080808">
 <title>{title} — Lavunio</title>
 <meta name="description" content="{lead}">
+<link rel="icon" type="image/png" href="/legal/logo.png">
 <meta property="og:type" content="article">
 <meta property="og:title" content="{title} — Lavunio">
 <meta property="og:description" content="{lead}">
@@ -175,16 +187,7 @@ fn page(
 <header class="topbar">
   <a class="brand" href="https://lavunio.pro" aria-label="Lavunio">
     <span class="brand-mark" aria-hidden="true">
-      <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-        <defs>
-          <linearGradient id="brand-grad" x1="0" y1="0" x2="24" y2="24">
-            <stop offset="0" stop-color="#ff3b2f"/><stop offset="1" stop-color="#ff7a1f"/>
-          </linearGradient>
-        </defs>
-        <path d="M5 8.5h14l-1.2 10.4a2 2 0 0 1-2 1.6H8.2a2 2 0 0 1-2-1.6L5 8.5Z" fill="rgba(229,50,43,0.14)" stroke="url(#brand-grad)" stroke-width="1.6" stroke-linejoin="round"/>
-        <path d="M9 8.5V7a3 3 0 0 1 6 0v1.5" stroke="url(#brand-grad)" stroke-width="1.7" stroke-linecap="round"/>
-        <path d="m10.2 12.2 4.8 2.5-4.8 2.6v-5.1Z" fill="url(#brand-grad)"/>
-      </svg>
+      <img src="/legal/logo.png" alt="" width="32" height="32">
     </span>
     <span class="brand-name">LAVUNIO</span>
   </a>
@@ -356,6 +359,7 @@ a { color: var(--accent-2); }
   flex: 0 0 auto;
 }
 .brand-mark { display: inline-flex; filter: drop-shadow(0 0 14px rgba(255, 90, 30, 0.25)); }
+.brand-mark img { width: 32px; height: 32px; display: block; object-fit: cover; border-radius: 8px; }
 .brand-name {
   font-family: "Arial Black", "Segoe UI", sans-serif;
   font-size: 17px;
