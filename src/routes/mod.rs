@@ -7,6 +7,7 @@ pub mod game_auth;
 pub mod health;
 pub mod news;
 pub mod publisher;
+pub mod teams;
 
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{delete, get, post, put};
@@ -36,6 +37,12 @@ pub fn router() -> Router<AppState> {
         .route(
             "/v1/me/author-application",
             get(authors::status).post(authors::apply),
+        )
+        .route("/v1/me/teams", get(teams::mine))
+        .route("/v1/teams", post(teams::create))
+        .route(
+            "/v1/teams/{slug}",
+            get(teams::profile).put(teams::update).delete(teams::archive),
         )
         .route("/v1/me", get(auth::me))
         .route("/v1/me/identities", get(auth::identities))
