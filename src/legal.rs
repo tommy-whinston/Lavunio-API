@@ -89,7 +89,7 @@ const TERMS_RU: &str = r#"
 <h2>7. Изменения</h2>
 <p>Мы можем обновлять условия. Новая версия публикуется на этой странице.</p>
 <h2>8. Контакты</h2>
-<p>Вопросы: <a href="mailto:support@lavunio.pro">support@lavunio.pro</a>.</p>
+<p>Вопросы: <a href="mailto:lavunio.support@gmail.com">lavunio.support@gmail.com</a>.</p>
 "#;
 
 const TERMS_EN: &str = r#"
@@ -122,7 +122,7 @@ const TERMS_EN: &str = r#"
 <h2>7. Changes</h2>
 <p>We may update these terms. The new version is published on this page.</p>
 <h2>8. Contact</h2>
-<p>Questions: <a href="mailto:support@lavunio.pro">support@lavunio.pro</a>.</p>
+<p>Questions: <a href="mailto:lavunio.support@gmail.com">lavunio.support@gmail.com</a>.</p>
 "#;
 
 const PRIVACY_RU: &str = r#"
@@ -147,7 +147,7 @@ const PRIVACY_RU: &str = r#"
 <h2>4. Срок хранения</h2>
 <p>Данные аккаунта хранятся до удаления аккаунта. Резервные копии базы — до 7 дней. Технические логи — ограниченное время, необходимое для диагностики и безопасности.</p>
 <h2>5. Ваши права</h2>
-<p>Вы можете запросить доступ, исправление или удаление данных, написав на <a href="mailto:support@lavunio.pro">support@lavunio.pro</a>.</p>
+<p>Вы можете запросить доступ, исправление или удаление данных, написав на <a href="mailto:lavunio.support@gmail.com">lavunio.support@gmail.com</a>.</p>
 <h2>6. Cookies и аналитика</h2>
 <p>Лаунчер не использует рекламные cookies и стороннюю аналитику. Юридические страницы не содержат трекеров.</p>
 <h2>7. Безопасность</h2>
@@ -180,7 +180,7 @@ const PRIVACY_EN: &str = r#"
 <h2>4. Retention</h2>
 <p>Account data is kept until account deletion. Database backups are kept for up to 7 days. Technical logs are retained for the limited time needed for diagnostics and security.</p>
 <h2>5. Your rights</h2>
-<p>You may request access, correction or deletion of your data by writing to <a href="mailto:support@lavunio.pro">support@lavunio.pro</a>.</p>
+<p>You may request access, correction or deletion of your data by writing to <a href="mailto:lavunio.support@gmail.com">lavunio.support@gmail.com</a>.</p>
 <h2>6. Cookies and analytics</h2>
 <p>The launcher uses no advertising cookies or third-party analytics. Legal pages contain no trackers.</p>
 <h2>7. Security</h2>
@@ -219,7 +219,7 @@ const RULES_RU: &str = r#"
 <h2>5. Апелляции</h2>
 <p>Отклонённый релиз можно оспорить в разделе «Публикация». Решение по апелляции принимает модератор.</p>
 <h2>6. Контакты</h2>
-<p>Жалобы и вопросы: <a href="mailto:support@lavunio.pro">support@lavunio.pro</a>.</p>
+<p>Жалобы и вопросы: <a href="mailto:lavunio.support@gmail.com">lavunio.support@gmail.com</a>.</p>
 "#;
 
 const RULES_EN: &str = r#"
@@ -250,5 +250,5 @@ const RULES_EN: &str = r#"
 <h2>5. Appeals</h2>
 <p>A rejected release can be appealed in the Publisher section. A moderator reviews the appeal.</p>
 <h2>6. Contact</h2>
-<p>Reports and questions: <a href="mailto:support@lavunio.pro">support@lavunio.pro</a>.</p>
+<p>Reports and questions: <a href="mailto:lavunio.support@gmail.com">lavunio.support@gmail.com</a>.</p>
 "#;
