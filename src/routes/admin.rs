@@ -12,6 +12,7 @@ use crate::models::{
     ModerationHistoryItem, ModerationItem, RejectRequest, ReleaseAppealItem, ReportItem,
     ResolveAppealRequest, SimpleStatus,
 };
+use crate::routes::notifications;
 use crate::AppState;
 
 #[derive(Debug, FromRow)]
@@ -494,6 +495,24 @@ pub async fn approve(
         admin.username,
         release_id
     );
+    if let Ok((author_id, slug)) = sqlx::query_as::<_, (Uuid, String)>(
+        "SELECT author_id, slug FROM modes WHERE id = $1",
+    )
+    .bind(release.mode_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        notifications::create(
+            &state.pool,
+            author_id,
+            "release_approved",
+            "Релиз одобрен",
+            "Твой релиз опубликован в каталоге",
+            Some("mode"),
+            Some(&slug),
+        )
+        .await;
+    }
 
     Ok(Json(SimpleStatus {
         ok: true,
@@ -558,6 +577,24 @@ pub async fn reject(
         release_id,
         note
     );
+    if let Ok((author_id, slug)) = sqlx::query_as::<_, (Uuid, String)>(
+        "SELECT author_id, slug FROM modes WHERE id = $1",
+    )
+    .bind(release.mode_id)
+    .fetch_one(&state.pool)
+    .await
+    {
+        notifications::create(
+            &state.pool,
+            author_id,
+            "release_rejected",
+            "Релиз отклонён",
+            note,
+            Some("mode"),
+            Some(&slug),
+        )
+        .await;
+    }
 
     Ok(Json(SimpleStatus {
         ok: true,

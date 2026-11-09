@@ -533,6 +533,8 @@ pub struct PlayerProfile {
     pub cape_url: Option<String>,
     pub role: String,
     pub created_at: DateTime<Utc>,
+    pub online: bool,
+    pub last_seen_at: Option<DateTime<Utc>>,
     pub teams: Vec<PlayerTeamItem>,
     pub modes: Vec<PlayerModeItem>,
     pub stats: PlayerStats,
@@ -545,6 +547,116 @@ pub struct UpdateProfileRequest {
     pub display_name: String,
     #[serde(default)]
     pub bio: String,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendItem {
+    pub user_id: Uuid,
+    pub username: String,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub skin_url: Option<String>,
+    pub online: bool,
+    pub last_seen_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendRequestItem {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub username: String,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendRequests {
+    pub incoming: Vec<FriendRequestItem>,
+    pub outgoing: Vec<FriendRequestItem>,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationItem {
+    pub id: Uuid,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    pub link_type: Option<String>,
+    pub link_id: Option<String>,
+    pub read_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationsResponse {
+    pub items: Vec<NotificationItem>,
+    pub unread: i64,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityFeedItem {
+    pub kind: String,
+    pub title: String,
+    pub subtitle: String,
+    pub username: String,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub mode_slug: Option<String>,
+    pub team_slug: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentItem {
+    pub id: Uuid,
+    pub parent_id: Option<Uuid>,
+    pub body: String,
+    pub user_id: Uuid,
+    pub username: String,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentRequest {
+    #[serde(default)]
+    pub body: String,
+    pub parent_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessageItem {
+    pub id: Uuid,
+    pub sender_id: Uuid,
+    pub sender_username: String,
+    pub sender_display_name: String,
+    pub body: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSendRequest {
+    #[serde(default)]
+    pub body: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkNotificationsRequest {
+    #[serde(default)]
+    pub ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

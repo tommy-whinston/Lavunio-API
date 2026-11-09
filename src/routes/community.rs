@@ -218,6 +218,26 @@ pub async fn reply_review(
         return Err(ApiError::NotFound("Отзыв не найден".to_string()));
     }
 
+    if let Ok(reviewer_id) =
+        sqlx::query_scalar::<_, Uuid>("SELECT user_id FROM reviews WHERE id = $1")
+            .bind(review_id)
+            .fetch_one(&state.pool)
+            .await
+    {
+        if reviewer_id != user.id {
+            crate::routes::notifications::create(
+                &state.pool,
+                reviewer_id,
+                "review_reply",
+                "Ответ на отзыв",
+                &format!("{} ответил на твой отзыв", user.display_name),
+                Some("mode"),
+                Some(&slug),
+            )
+            .await;
+        }
+    }
+
     Ok(Json(SimpleStatus {
         ok: true,
         status: "replied".to_string(),

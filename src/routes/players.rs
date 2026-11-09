@@ -24,6 +24,8 @@ struct ProfileRow {
     cape_url: Option<String>,
     role: String,
     created_at: DateTime<Utc>,
+    online: bool,
+    last_seen_at: Option<DateTime<Utc>>,
 }
 
 async fn build_profile(pool: &sqlx::PgPool, row: ProfileRow) -> Result<PlayerProfile, ApiError> {
@@ -84,6 +86,8 @@ async fn build_profile(pool: &sqlx::PgPool, row: ProfileRow) -> Result<PlayerPro
         cape_url: row.cape_url,
         role: row.role,
         created_at: row.created_at,
+        online: row.online,
+        last_seen_at: row.last_seen_at,
         teams,
         modes,
         stats: PlayerStats {
@@ -101,7 +105,9 @@ pub async fn profile(
     let row = sqlx::query_as::<_, ProfileRow>(
         r#"
         SELECT id, username, display_name, avatar_url, bio, skin_url, skin_model,
-               cape_url, role, created_at
+               cape_url, role, created_at,
+               COALESCE(last_seen_at > now() - interval '2 minutes', false) AS online,
+               last_seen_at
         FROM users
         WHERE lower(username) = lower($1)
         "#,

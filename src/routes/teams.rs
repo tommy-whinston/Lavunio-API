@@ -11,6 +11,7 @@ use crate::models::{
     TeamNewsItem, TeamNewsRequest, TeamProfile, TeamRequest, TeamStats, TeamTransferRequest,
     TeamVerifyRequest,
 };
+use crate::routes::notifications;
 use crate::AppState;
 
 fn valid_member_role(role: &str) -> bool {
@@ -357,6 +358,16 @@ pub async fn invite(
         invitee.1,
         team.slug
     );
+    notifications::create(
+        &state.pool,
+        invitee.0,
+        "team_invite",
+        "Приглашение в команду",
+        &format!("{} приглашает тебя в команду «{}»", user.display_name, team.title),
+        Some("team"),
+        Some(&team.slug),
+    )
+    .await;
     Ok(Json(team))
 }
 

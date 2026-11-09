@@ -2,10 +2,15 @@ pub mod admin;
 pub mod auth;
 pub mod authors;
 pub mod catalog;
+pub mod chat;
+pub mod comments;
 pub mod community;
+pub mod feed;
+pub mod friends;
 pub mod game_auth;
 pub mod health;
 pub mod news;
+pub mod notifications;
 pub mod players;
 pub mod publisher;
 pub mod teams;
@@ -42,6 +47,35 @@ pub fn router() -> Router<AppState> {
         .route("/v1/me/teams", get(teams::mine))
         .route("/v1/me/profile", put(players::update_profile))
         .route("/v1/users/{username}", get(players::profile))
+        .route("/v1/me/presence", post(friends::heartbeat))
+        .route("/v1/me/friends", get(friends::list))
+        .route(
+            "/v1/me/friends/{username}",
+            post(friends::add).delete(friends::remove),
+        )
+        .route("/v1/me/friend-requests", get(friends::requests))
+        .route(
+            "/v1/me/friend-requests/{id}/{action}",
+            post(friends::respond),
+        )
+        .route(
+            "/v1/me/notifications",
+            get(notifications::list).post(notifications::mark_read),
+        )
+        .route("/v1/feed", get(feed::feed))
+        .route(
+            "/v1/modes/{slug}/comments",
+            get(comments::list).post(comments::create),
+        )
+        .route("/v1/comments/{id}", delete(comments::delete))
+        .route(
+            "/v1/chat/direct/{username}",
+            get(chat::direct).post(chat::send_direct),
+        )
+        .route(
+            "/v1/chat/teams/{id}",
+            get(chat::team_messages).post(chat::send_team),
+        )
         .route("/v1/me/team-invitations", get(teams::invitations))
         .route(
             "/v1/me/team-invitations/{id}/accept",
