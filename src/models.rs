@@ -41,6 +41,19 @@ pub struct ModeRow {
     pub author_username: String,
     pub author_name: String,
     pub author_avatar: Option<String>,
+    pub team_id: Option<Uuid>,
+    pub team_slug: Option<String>,
+    pub team_title: Option<String>,
+    pub team_verified: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamRef {
+    pub id: Uuid,
+    pub slug: String,
+    pub title: String,
+    pub verified: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -114,6 +127,7 @@ pub struct ModeSummary {
     pub reviews_count: i64,
     pub screenshots: Vec<String>,
     pub author: UserSummary,
+    pub team: Option<TeamRef>,
     pub tags: Vec<Tag>,
     pub latest_release: Option<ReleaseSummary>,
     pub build: Option<BuildInfo>,

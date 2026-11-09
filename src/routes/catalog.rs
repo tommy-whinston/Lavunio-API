@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::error::ApiError;
 use crate::models::{
     Asset, AuthorResponse, BuildInfo, CatalogResponse, CollectionSection, ModeRow, ModeSummary,
-    Release, ReleaseSummary, Tag, UserSummary,
+    Release, ReleaseSummary, Tag, TeamRef, UserSummary,
 };
 use crate::AppState;
 
@@ -169,6 +169,12 @@ async fn mode_summary(pool: &PgPool, row: ModeRow) -> Result<ModeSummary, ApiErr
             display_name: row.author_name,
             avatar_url: row.author_avatar,
         },
+        team: row.team_id.map(|id| TeamRef {
+            id,
+            slug: row.team_slug.unwrap_or_default(),
+            title: row.team_title.unwrap_or_default(),
+            verified: row.team_verified.unwrap_or(false),
+        }),
         tags,
         latest_release,
         build,
@@ -184,9 +190,12 @@ async fn mode_row_by_slug(pool: &PgPool, slug: &str) -> Result<ModeRow, ApiError
                m.cover_url, m.trailer_url, m.mc_version, m.loader, m.loader_version, m.size_label,
                m.created_at, m.updated_at,
                u.id AS author_id, u.username AS author_username,
-               u.display_name AS author_name, u.avatar_url AS author_avatar
+               u.display_name AS author_name, u.avatar_url AS author_avatar,
+                   m.team_id, t.slug AS team_slug, t.title AS team_title,
+                   t.verified AS team_verified
         FROM modes m
         JOIN users u ON u.id = m.author_id
+        LEFT JOIN teams t ON t.id = m.team_id
         WHERE m.slug = $1 AND m.status = 'published'
         "#,
     )
@@ -239,9 +248,12 @@ pub async fn catalog(
                m.cover_url, m.trailer_url, m.mc_version, m.loader, m.loader_version, m.size_label,
                m.created_at, m.updated_at,
                u.id AS author_id, u.username AS author_username,
-               u.display_name AS author_name, u.avatar_url AS author_avatar
+               u.display_name AS author_name, u.avatar_url AS author_avatar,
+                   m.team_id, t.slug AS team_slug, t.title AS team_title,
+                   t.verified AS team_verified
         FROM modes m
         JOIN users u ON u.id = m.author_id
+        LEFT JOIN teams t ON t.id = m.team_id
         WHERE m.status = 'published'
           AND (
               $1 = ''
@@ -286,6 +298,7 @@ pub async fn catalog(
         SELECT COUNT(*)
         FROM modes m
         JOIN users u ON u.id = m.author_id
+        LEFT JOIN teams t ON t.id = m.team_id
         WHERE m.status = 'published'
           AND (
               $1 = ''
@@ -363,10 +376,13 @@ async fn manual_collections(pool: &PgPool) -> Result<Vec<CollectionSection>, Api
                    m.cover_url, m.trailer_url, m.mc_version, m.loader, m.loader_version,
                    m.size_label, m.created_at, m.updated_at,
                    u.id AS author_id, u.username AS author_username,
-                   u.display_name AS author_name, u.avatar_url AS author_avatar
+                   u.display_name AS author_name, u.avatar_url AS author_avatar,
+                   m.team_id, t.slug AS team_slug, t.title AS team_title,
+                   t.verified AS team_verified
             FROM collection_modes cm
             JOIN modes m ON m.id = cm.mode_id
             JOIN users u ON u.id = m.author_id
+        LEFT JOIN teams t ON t.id = m.team_id
             WHERE cm.collection_id = $1 AND m.status = 'published'
             ORDER BY cm.sort_order, m.title
             "#,
@@ -399,9 +415,12 @@ pub async fn collections(
                m.cover_url, m.trailer_url, m.mc_version, m.loader, m.loader_version, m.size_label,
                m.created_at, m.updated_at,
                u.id AS author_id, u.username AS author_username,
-               u.display_name AS author_name, u.avatar_url AS author_avatar
+               u.display_name AS author_name, u.avatar_url AS author_avatar,
+                   m.team_id, t.slug AS team_slug, t.title AS team_title,
+                   t.verified AS team_verified
         FROM modes m
         JOIN users u ON u.id = m.author_id
+        LEFT JOIN teams t ON t.id = m.team_id
         WHERE m.status = 'published'
         ORDER BY m.updated_at DESC
         LIMIT 100
@@ -526,9 +545,12 @@ pub async fn author(
                m.cover_url, m.trailer_url, m.mc_version, m.loader, m.loader_version, m.size_label,
                m.created_at, m.updated_at,
                u.id AS author_id, u.username AS author_username,
-               u.display_name AS author_name, u.avatar_url AS author_avatar
+               u.display_name AS author_name, u.avatar_url AS author_avatar,
+                   m.team_id, t.slug AS team_slug, t.title AS team_title,
+                   t.verified AS team_verified
         FROM modes m
         JOIN users u ON u.id = m.author_id
+        LEFT JOIN teams t ON t.id = m.team_id
         WHERE m.author_id = $1 AND m.status = 'published'
         ORDER BY m.updated_at DESC
         "#,
