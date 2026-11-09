@@ -141,6 +141,13 @@ fn page(
     } else {
         "Lavunio — платформа игровых режимов Minecraft. Юридические документы публикуются на русском и английском языках."
     };
+    let canonical = if en {
+        format!("https://lavunio.pro{path}?lang=en")
+    } else {
+        format!("https://lavunio.pro{path}")
+    };
+    let ru_url = format!("https://lavunio.pro{path}");
+    let en_url = format!("https://lavunio.pro{path}?lang=en");
 
     format!(
         r##"<!doctype html>
@@ -152,7 +159,15 @@ fn page(
 <meta name="theme-color" content="#080808">
 <title>{title} — Lavunio</title>
 <meta name="description" content="{lead}">
-<link rel="canonical" href="https://lavunio.pro{path}">
+<meta property="og:type" content="article">
+<meta property="og:title" content="{title} — Lavunio">
+<meta property="og:description" content="{lead}">
+<meta property="og:url" content="{canonical}">
+<meta property="og:site_name" content="Lavunio">
+<link rel="canonical" href="{canonical}">
+<link rel="alternate" hreflang="ru" href="{ru_url}">
+<link rel="alternate" hreflang="en" href="{en_url}">
+<link rel="alternate" hreflang="x-default" href="{ru_url}">
 <style>{style}</style>
 </head>
 <body>
@@ -232,7 +247,6 @@ fn page(
         lang = lang,
         title = title,
         lead = lead,
-        path = path,
         style = STYLE,
         active_terms = active_terms,
         active_privacy = active_privacy,
@@ -256,6 +270,9 @@ fn page(
         skip = skip,
         nav_label = nav_label,
         lang_label = lang_label,
+        canonical = canonical,
+        ru_url = ru_url,
+        en_url = en_url,
         body = body
     )
 }
