@@ -53,12 +53,31 @@ fn ensure_author(user: &AuthUser) -> Result<(), ApiError> {
 }
 
 async fn ensure_mode_owner(pool: &PgPool, user: &AuthUser, mode_id: Uuid) -> Result<(), ApiError> {
-    let author_id = sqlx::query_scalar::<_, Uuid>("SELECT author_id FROM modes WHERE id = $1")
-        .bind(mode_id)
+    let row = sqlx::query_as::<_, (Uuid, Option<Uuid>)>(
+        "SELECT author_id, team_id FROM modes WHERE id = $1",
+    )
+    .bind(mode_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("Режим не найден".to_string()))?;
+    if user.role == "admin" || user.id == row.0 {
+        return Ok(());
+    }
+    if let Some(team_id) = row.1 {
+        let role = sqlx::query_scalar::<_, String>(
+            "SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2",
+        )
+        .bind(team_id)
+        .bind(user.id)
         .fetch_optional(pool)
-        .await?
-        .ok_or_else(|| ApiError::NotFound("Режим не найден".to_string()))?;
-    ensure_owner(user, author_id).await
+        .await?;
+        if matches!(role.as_deref(), Some("owner") | Some("admin") | Some("publisher")) {
+            return Ok(());
+        }
+    }
+    Err(ApiError::Forbidden(
+        "Можно изменять только свои режимы".to_string(),
+    ))
 }
 
 async fn mode_stats(pool: &PgPool, mode_id: Uuid) -> Result<PublisherStats, ApiError> {
@@ -166,12 +185,37 @@ pub async fn create_mode(
     }
 
     let mode_id = Uuid::new_v4();
+    if let Some(team_id) = body.team_id {
+        let status = sqlx::query_scalar::<_, String>("SELECT status FROM teams WHERE id = $1")
+            .bind(team_id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("Команда не найдена".to_string()))?;
+        if status != "active" {
+            return Err(ApiError::BadRequest("Команда в архиве".to_string()));
+        }
+        let role = sqlx::query_scalar::<_, String>(
+            "SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2",
+        )
+        .bind(team_id)
+        .bind(user.id)
+        .fetch_optional(&state.pool)
+        .await?;
+        if user.role != "admin"
+            && !matches!(role.as_deref(), Some("owner") | Some("admin") | Some("publisher"))
+        {
+            return Err(ApiError::Forbidden(
+                "Создавать режимы команды могут владелец, админ и публикатор".to_string(),
+            ));
+        }
+    }
+
     let inserted = sqlx::query_scalar::<_, Uuid>(
         r#"
         INSERT INTO modes
             (id, slug, title, short_description, description, status, cover_url, trailer_url,
-             author_id, mc_version, loader, loader_version, size_label)
-        VALUES ($1, $2, $3, $4, $5, 'draft', $6, $7, $8, $9, $10, $11, $12)
+             author_id, mc_version, loader, loader_version, size_label, team_id)
+        VALUES ($1, $2, $3, $4, $5, 'draft', $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING id
         "#,
     )
@@ -193,6 +237,7 @@ pub async fn create_mode(
     )
     .bind(body.loader_version)
     .bind(body.size)
+    .bind(body.team_id)
     .fetch_one(&state.pool)
     .await?;
 
@@ -203,6 +248,34 @@ pub async fn create_mode(
     .bind(user.id)
     .execute(&state.pool)
     .await?;
+
+    let mut order = 1i32;
+    for username in body.co_authors.iter().take(10) {
+        let username = username.trim();
+        if username.is_empty() {
+            continue;
+        }
+        let co_author = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM users WHERE lower(username) = lower($1)",
+        )
+        .bind(username)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::BadRequest(format!("Соавтор не найден: {username}")))?;
+        if co_author == user.id {
+            continue;
+        }
+        sqlx::query(
+            "INSERT INTO mode_authors (mode_id, user_id, role, sort_order)
+             VALUES ($1, $2, 'author', $3) ON CONFLICT DO NOTHING",
+        )
+        .bind(inserted)
+        .bind(co_author)
+        .bind(order)
+        .execute(&state.pool)
+        .await?;
+        order += 1;
+    }
 
     set_tags(&state.pool, inserted, &body.tags).await?;
 
@@ -228,6 +301,10 @@ pub async fn my_modes(
                mc_version, loader, loader_version, size_label, created_at, updated_at
         FROM modes
         WHERE author_id = $1
+           OR team_id IN (
+               SELECT team_id FROM team_members
+               WHERE user_id = $1 AND role IN ('owner', 'admin', 'publisher')
+           )
         ORDER BY updated_at DESC
         "#,
     )

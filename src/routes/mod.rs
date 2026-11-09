@@ -55,6 +55,20 @@ pub fn router() -> Router<AppState> {
         )
         .route("/v1/teams/{id}/invitations", post(teams::invite))
         .route(
+            "/v1/teams/{id}/join-requests",
+            get(teams::join_requests).post(teams::request_join),
+        )
+        .route(
+            "/v1/teams/{id}/join-requests/{request_id}/resolve",
+            post(teams::resolve_join_request),
+        )
+        .route("/v1/teams/{id}/transfer", post(teams::transfer))
+        .route(
+            "/v1/teams/{id}/follow",
+            post(teams::follow).delete(teams::unfollow),
+        )
+        .route("/v1/teams/{id}/news", post(teams::create_news))
+        .route(
             "/v1/teams/{id}/members/{user_id}",
             put(teams::set_member_role).delete(teams::remove_member),
         )
@@ -195,6 +209,7 @@ pub fn router() -> Router<AppState> {
             "/v1/admin/author-applications/{id}/reject",
             post(authors::admin_reject),
         )
+        .route("/v1/admin/teams/{id}/verify", post(teams::admin_verify))
         .route("/v1/admin/moderation/{id}/approve", post(admin::approve))
         .route("/v1/admin/moderation/{id}/reject", post(admin::reject))
         .route("/v1/admin/modes", get(admin::modes))

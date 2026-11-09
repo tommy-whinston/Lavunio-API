@@ -6,8 +6,10 @@ use uuid::Uuid;
 use crate::auth;
 use crate::error::ApiError;
 use crate::models::{
-    SimpleStatus, Team, TeamCard, TeamInvitationItem, TeamInviteRequest, TeamMember,
-    TeamMemberRoleRequest, TeamProfile, TeamRequest,
+    SimpleStatus, Team, TeamCard, TeamInvitationItem, TeamInviteRequest, TeamJoinRequest,
+    TeamJoinRequestItem, TeamJoinResolveRequest, TeamMember, TeamMemberRoleRequest, TeamModeItem,
+    TeamNewsItem, TeamNewsRequest, TeamProfile, TeamRequest, TeamStats, TeamTransferRequest,
+    TeamVerifyRequest,
 };
 use crate::AppState;
 
@@ -65,7 +67,7 @@ async fn fetch_team(pool: &sqlx::PgPool, team_id: Uuid) -> Result<Team, ApiError
     sqlx::query_as::<_, Team>(
         r#"
         SELECT id, slug, title, description, links, avatar_url, banner_url,
-               owner_id, status, created_at, updated_at
+               owner_id, status, join_mode, verified, created_at, updated_at
         FROM teams
         WHERE id = $1
         "#,
@@ -94,7 +96,11 @@ pub async fn mine(
     let teams = sqlx::query_as::<_, TeamCard>(
         r#"
         SELECT t.id, t.slug, t.title, t.description, t.links, t.status, t.avatar_url,
-               t.banner_url, tm.role, t.updated_at
+               t.banner_url, tm.role, t.verified, t.join_mode,
+               (SELECT count(*) FROM modes m WHERE m.team_id = t.id AND m.status = 'published') AS modes_count,
+               (SELECT count(*) FROM mode_events e JOIN modes m ON m.id = e.mode_id
+                WHERE m.team_id = t.id AND e.event = 'download') AS downloads,
+               t.updated_at
         FROM teams t
         JOIN team_members tm ON tm.team_id = t.id
         WHERE tm.user_id = $1 AND t.status = 'active'
@@ -121,14 +127,20 @@ pub async fn create(
     let (slug, title, description, links) = validate_request(&body)?;
     let avatar_url = validate_url(&body.avatar_url, "Ссылка на аватар")?;
     let banner_url = validate_url(&body.banner_url, "Ссылка на баннер")?;
+    let join_mode = body.join_mode.as_deref().unwrap_or("invite").trim();
+    if !matches!(join_mode, "invite" | "request" | "open") {
+        return Err(ApiError::BadRequest(
+            "joinMode: invite, request или open".to_string(),
+        ));
+    }
 
     let id = Uuid::new_v4();
     let mut tx = state.pool.begin().await?;
     sqlx::query(
         r#"
         INSERT INTO teams
-            (id, slug, title, description, links, avatar_url, banner_url, owner_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            (id, slug, title, description, links, avatar_url, banner_url, owner_id, join_mode)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         "#,
     )
     .bind(id)
@@ -139,6 +151,7 @@ pub async fn create(
     .bind(&avatar_url)
     .bind(&banner_url)
     .bind(user.id)
+    .bind(join_mode)
     .execute(&mut *tx)
     .await
     .map_err(|error| match error {
@@ -178,12 +191,18 @@ pub async fn update(
     let (slug, title, description, links) = validate_request(&body)?;
     let avatar_url = validate_url(&body.avatar_url, "Ссылка на аватар")?;
     let banner_url = validate_url(&body.banner_url, "Ссылка на баннер")?;
+    let join_mode = body.join_mode.as_deref().unwrap_or("invite").trim();
+    if !matches!(join_mode, "invite" | "request" | "open") {
+        return Err(ApiError::BadRequest(
+            "joinMode: invite, request или open".to_string(),
+        ));
+    }
 
     sqlx::query(
         r#"
         UPDATE teams
         SET slug = $2, title = $3, description = $4, links = $5,
-            avatar_url = $6, banner_url = $7, updated_at = now()
+            avatar_url = $6, banner_url = $7, join_mode = $8, updated_at = now()
         WHERE id = $1
         "#,
     )
@@ -194,6 +213,7 @@ pub async fn update(
     .bind(&links)
     .bind(&avatar_url)
     .bind(&banner_url)
+    .bind(join_mode)
     .execute(&state.pool)
     .await
     .map_err(|error| match error {
@@ -515,6 +535,311 @@ pub async fn remove_member(
     }))
 }
 
+pub async fn request_join(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(team_id): Path<Uuid>,
+    Json(body): Json<TeamJoinRequest>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let team = fetch_team(&state.pool, team_id).await?;
+    if team.status != "active" {
+        return Err(ApiError::BadRequest("Команда в архиве".to_string()));
+    }
+    if team.join_mode == "invite" {
+        return Err(ApiError::Forbidden(
+            "Команда принимает только по приглашениям".to_string(),
+        ));
+    }
+    let member = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM team_members WHERE team_id = $1 AND user_id = $2)",
+    )
+    .bind(team_id)
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    if member {
+        return Err(ApiError::Conflict("Ты уже состоишь в команде".to_string()));
+    }
+
+    if team.join_mode == "open" {
+        sqlx::query(
+            "INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING",
+        )
+        .bind(team_id)
+        .bind(user.id)
+        .execute(&state.pool)
+        .await?;
+        return Ok(Json(SimpleStatus {
+            ok: true,
+            status: "joined".to_string(),
+        }));
+    }
+
+    let message = body.message.trim();
+    if message.chars().count() > 1000 {
+        return Err(ApiError::BadRequest("Сообщение слишком длинное".to_string()));
+    }
+    sqlx::query(
+        "INSERT INTO team_join_requests (id, team_id, user_id, message) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(team_id)
+    .bind(user.id)
+    .bind(message)
+    .execute(&state.pool)
+    .await
+    .map_err(|error| match error {
+        sqlx::Error::Database(db) if db.code().as_deref() == Some("23505") => {
+            ApiError::Conflict("Заявка уже отправлена".to_string())
+        }
+        other => ApiError::from(other),
+    })?;
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "pending".to_string(),
+    }))
+}
+
+pub async fn join_requests(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(team_id): Path<Uuid>,
+) -> Result<Json<Vec<TeamJoinRequestItem>>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let role = team_role(&state.pool, team_id, user.id).await?;
+    if user.role != "admin" && !matches!(role.as_deref(), Some("owner") | Some("admin")) {
+        return Err(ApiError::Forbidden(
+            "Заявки видят владелец и администратор команды".to_string(),
+        ));
+    }
+    let items = sqlx::query_as::<_, TeamJoinRequestItem>(
+        r#"
+        SELECT r.id, r.user_id, u.username, u.display_name, r.message, r.created_at
+        FROM team_join_requests r
+        JOIN users u ON u.id = r.user_id
+        WHERE r.team_id = $1 AND r.status = 'pending'
+        ORDER BY r.created_at
+        "#,
+    )
+    .bind(team_id)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(items))
+}
+
+pub async fn resolve_join_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((team_id, request_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<TeamJoinResolveRequest>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let role = team_role(&state.pool, team_id, user.id).await?;
+    if user.role != "admin" && !matches!(role.as_deref(), Some("owner") | Some("admin")) {
+        return Err(ApiError::Forbidden(
+            "Рассматривать заявки могут владелец и администратор команды".to_string(),
+        ));
+    }
+    let accept = body.action.trim() == "accept";
+    let mut tx = state.pool.begin().await?;
+    let row = sqlx::query_as::<_, (Uuid, String)>(
+        "SELECT user_id, status FROM team_join_requests WHERE id = $1 AND team_id = $2 FOR UPDATE",
+    )
+    .bind(request_id)
+    .bind(team_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("Заявка не найдена".to_string()))?;
+    if row.1 != "pending" {
+        return Err(ApiError::Conflict("Заявка уже рассмотрена".to_string()));
+    }
+    if accept {
+        sqlx::query(
+            "INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING",
+        )
+        .bind(team_id)
+        .bind(row.0)
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query(
+        "UPDATE team_join_requests SET status = $2, resolved_at = now(), resolved_by = $3 WHERE id = $1",
+    )
+    .bind(request_id)
+    .bind(if accept { "accepted" } else { "rejected" })
+    .bind(user.id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: if accept { "accepted" } else { "rejected" }.to_string(),
+    }))
+}
+
+pub async fn transfer(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(team_id): Path<Uuid>,
+    Json(body): Json<TeamTransferRequest>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let role = team_role(&state.pool, team_id, user.id).await?;
+    if role.as_deref() != Some("owner") {
+        return Err(ApiError::Forbidden(
+            "Передать владение может только владелец".to_string(),
+        ));
+    }
+    let target = sqlx::query_as::<_, (Uuid, String)>(
+        "SELECT id, display_name FROM users WHERE lower(username) = lower($1)",
+    )
+    .bind(body.username.trim())
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("Пользователь не найден".to_string()))?;
+    if target.0 == user.id {
+        return Err(ApiError::BadRequest(
+            "Ты уже владелец команды".to_string(),
+        ));
+    }
+    let target_role = team_role(&state.pool, team_id, target.0)
+        .await?
+        .ok_or_else(|| ApiError::BadRequest("Пользователь не состоит в команде".to_string()))?;
+    if target_role == "owner" {
+        return Err(ApiError::BadRequest(
+            "Пользователь уже владелец".to_string(),
+        ));
+    }
+
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("UPDATE team_members SET role = 'admin' WHERE team_id = $1 AND user_id = $2")
+        .bind(team_id)
+        .bind(user.id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE team_members SET role = 'owner' WHERE team_id = $1 AND user_id = $2")
+        .bind(team_id)
+        .bind(target.0)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE teams SET owner_id = $2, updated_at = now() WHERE id = $1")
+        .bind(team_id)
+        .bind(target.0)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    tracing::info!(
+        "team {} ownership transferred from {} to {}",
+        team_id,
+        user.username,
+        target.1
+    );
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "transferred".to_string(),
+    }))
+}
+
+pub async fn follow(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(team_id): Path<Uuid>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let team = fetch_team(&state.pool, team_id).await?;
+    if team.status != "active" {
+        return Err(ApiError::BadRequest("Команда в архиве".to_string()));
+    }
+    sqlx::query(
+        "INSERT INTO team_followers (team_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    )
+    .bind(team_id)
+    .bind(user.id)
+    .execute(&state.pool)
+    .await?;
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "following".to_string(),
+    }))
+}
+
+pub async fn unfollow(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(team_id): Path<Uuid>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    sqlx::query("DELETE FROM team_followers WHERE team_id = $1 AND user_id = $2")
+        .bind(team_id)
+        .bind(user.id)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "unfollowed".to_string(),
+    }))
+}
+
+pub async fn create_news(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(team_id): Path<Uuid>,
+    Json(body): Json<TeamNewsRequest>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let role = team_role(&state.pool, team_id, user.id).await?;
+    if user.role != "admin" && !matches!(role.as_deref(), Some("owner") | Some("admin")) {
+        return Err(ApiError::Forbidden(
+            "Публиковать новости могут владелец и администратор команды".to_string(),
+        ));
+    }
+    let title = body.title.trim();
+    let text = body.body.trim();
+    if !(3..=120).contains(&title.chars().count()) {
+        return Err(ApiError::BadRequest(
+            "Заголовок новости: от 3 до 120 символов".to_string(),
+        ));
+    }
+    if !(3..=5000).contains(&text.chars().count()) {
+        return Err(ApiError::BadRequest(
+            "Текст новости: от 3 до 5000 символов".to_string(),
+        ));
+    }
+    sqlx::query(
+        "INSERT INTO team_news (id, team_id, author_id, title, body) VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(team_id)
+    .bind(user.id)
+    .bind(title)
+    .bind(text)
+    .execute(&state.pool)
+    .await?;
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "published".to_string(),
+    }))
+}
+
+pub async fn admin_verify(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(team_id): Path<Uuid>,
+    Json(body): Json<TeamVerifyRequest>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    auth::require_admin(&state.pool, &headers).await?;
+    sqlx::query("UPDATE teams SET verified = $2, updated_at = now() WHERE id = $1")
+        .bind(team_id)
+        .bind(body.verified)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: if body.verified { "verified" } else { "unverified" }.to_string(),
+    }))
+}
+
 pub async fn profile(
     State(state): State<AppState>,
     Path(slug): Path<String>,
@@ -522,7 +847,7 @@ pub async fn profile(
     let team = sqlx::query_as::<_, Team>(
         r#"
         SELECT id, slug, title, description, links, avatar_url, banner_url,
-               owner_id, status, created_at, updated_at
+               owner_id, status, join_mode, verified, created_at, updated_at
         FROM teams
         WHERE slug = $1 AND status = 'active'
         "#,
@@ -551,5 +876,66 @@ pub async fn profile(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(TeamProfile { team, members }))
+    let modes = sqlx::query_as::<_, TeamModeItem>(
+        r#"
+        SELECT m.id, m.slug, m.title, m.short_description, m.status, m.cover_url,
+               (SELECT COUNT(*) FROM mode_events e
+                WHERE e.mode_id = m.id AND e.event = 'install') AS installs
+        FROM modes m
+        WHERE m.team_id = $1 AND m.status = 'published'
+        ORDER BY m.updated_at DESC
+        "#,
+    )
+    .bind(team.id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let stats = sqlx::query_as::<_, (i64, i64, i64, i64)>(
+        r#"
+        SELECT
+            (SELECT COUNT(*) FROM modes m WHERE m.team_id = $1) AS modes,
+            (SELECT COUNT(*) FROM modes m WHERE m.team_id = $1 AND m.status = 'published') AS published,
+            (SELECT COUNT(*) FROM mode_events e JOIN modes m ON m.id = e.mode_id
+             WHERE m.team_id = $1 AND e.event = 'download') AS downloads,
+            (SELECT COUNT(*) FROM mode_events e JOIN modes m ON m.id = e.mode_id
+             WHERE m.team_id = $1 AND e.event = 'install') AS installs
+        "#,
+    )
+    .bind(team.id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    let followers = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM team_followers WHERE team_id = $1",
+    )
+    .bind(team.id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    let news = sqlx::query_as::<_, TeamNewsItem>(
+        r#"
+        SELECT id, title, body, created_at
+        FROM team_news
+        WHERE team_id = $1 AND status = 'published'
+        ORDER BY created_at DESC
+        LIMIT 5
+        "#,
+    )
+    .bind(team.id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(TeamProfile {
+        team,
+        members,
+        modes,
+        stats: TeamStats {
+            modes: stats.0,
+            published: stats.1,
+            downloads: stats.2,
+            installs: stats.3,
+        },
+        followers,
+        news,
+    }))
 }

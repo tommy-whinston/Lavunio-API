@@ -234,6 +234,9 @@ pub struct CreateModeRequest {
     pub loader: Option<String>,
     pub loader_version: Option<String>,
     pub size: Option<String>,
+    pub team_id: Option<Uuid>,
+    #[serde(default)]
+    pub co_authors: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -332,6 +335,8 @@ pub struct Team {
     pub banner_url: Option<String>,
     pub owner_id: Uuid,
     pub status: String,
+    pub join_mode: String,
+    pub verified: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -348,17 +353,52 @@ pub struct TeamCard {
     pub avatar_url: Option<String>,
     pub banner_url: Option<String>,
     pub role: String,
+    pub verified: bool,
+    pub join_mode: String,
+    pub modes_count: i64,
+    pub downloads: i64,
     pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, FromRow)]
 #[serde(rename_all = "camelCase")]
-pub struct TeamMember {
+pub struct TeamModeItem {
+    pub id: Uuid,
+    pub slug: String,
+    pub title: String,
+    pub short_description: String,
+    pub status: String,
+    pub cover_url: Option<String>,
+    pub installs: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamStats {
+    pub modes: i64,
+    pub published: i64,
+    pub downloads: i64,
+    pub installs: i64,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamNewsItem {
+    pub id: Uuid,
+    pub title: String,
+    pub body: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamJoinRequestItem {
+    pub id: Uuid,
     pub user_id: Uuid,
     pub username: String,
     pub display_name: String,
-    pub avatar_url: Option<String>,
-    pub role: String,
+    pub message: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -366,6 +406,10 @@ pub struct TeamMember {
 pub struct TeamProfile {
     pub team: Team,
     pub members: Vec<TeamMember>,
+    pub modes: Vec<TeamModeItem>,
+    pub stats: TeamStats,
+    pub followers: i64,
+    pub news: Vec<TeamNewsItem>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -381,6 +425,55 @@ pub struct TeamRequest {
     pub links: String,
     pub avatar_url: Option<String>,
     pub banner_url: Option<String>,
+    #[serde(default)]
+    pub join_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamJoinRequest {
+    #[serde(default)]
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamJoinResolveRequest {
+    #[serde(default)]
+    pub action: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamNewsRequest {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamTransferRequest {
+    #[serde(default)]
+    pub username: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamVerifyRequest {
+    #[serde(default)]
+    pub verified: bool,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamMember {
+    pub user_id: Uuid,
+    pub username: String,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub role: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
