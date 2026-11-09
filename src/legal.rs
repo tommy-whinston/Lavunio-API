@@ -125,6 +125,11 @@ fn page(
             "Все права защищены.",
         )
     };
+    let (skip, nav_label, lang_label) = if en {
+        ("Skip to content", "Legal documents", "Language")
+    } else {
+        ("К содержанию", "Юридические документы", "Язык")
+    };
     let active_terms = if active == "terms" { " active" } else { "" };
     let active_privacy = if active == "privacy" { " active" } else { "" };
     let active_rules = if active == "rules" { " active" } else { "" };
@@ -150,7 +155,7 @@ fn page(
 <style>{style}</style>
 </head>
 <body>
-<a class="skip" href="#content">Skip to content</a>
+<a class="skip" href="#content">{skip}</a>
 <header class="topbar">
   <a class="brand" href="https://lavunio.pro" aria-label="Lavunio">
     <span class="brand-mark" aria-hidden="true">
@@ -167,12 +172,12 @@ fn page(
     </span>
     <span class="brand-name">LAVUNIO</span>
   </a>
-  <nav class="topnav" aria-label="Legal documents">
+  <nav class="topnav" aria-label="{nav_label}">
     <a class="nav-link{active_terms}" href="/legal/terms?lang={lang_query}">{terms}</a>
     <a class="nav-link{active_privacy}" href="/legal/privacy?lang={lang_query}">{privacy}</a>
     <a class="nav-link{active_rules}" href="/legal/rules?lang={lang_query}">{rules}</a>
   </nav>
-  <div class="lang" aria-label="Language">
+  <div class="lang" aria-label="{lang_label}">
     <a class="lang-link{ru_active}" href="?lang=ru" aria-current="{ru_current}">RU</a>
     <a class="lang-link{en_active}" href="?lang=en" aria-current="{en_current}">EN</a>
   </div>
@@ -233,8 +238,8 @@ fn page(
         active_rules = active_rules,
         ru_active = ru_active,
         en_active = en_active,
-        ru_current = if en { "false" } else { "page" },
-        en_current = if en { "page" } else { "false" },
+        ru_current = if en { "false" } else { "true" },
+        en_current = if en { "true" } else { "false" },
         lang_query = lang_query,
         terms = terms,
         privacy = privacy,
@@ -247,6 +252,9 @@ fn page(
         home = home,
         rights = rights,
         footer_note = footer_note,
+        skip = skip,
+        nav_label = nav_label,
+        lang_label = lang_label,
         body = body
     )
 }
@@ -388,10 +396,14 @@ a { color: var(--accent-2); }
 h1 {
   margin: 14px 0 16px;
   font-family: "Arial Black", "Segoe UI", sans-serif;
-  font-size: clamp(34px, 4.6vw, 58px);
+  font-size: clamp(30px, 4.6vw, 58px);
   line-height: 1.03;
   letter-spacing: -0.6px;
   text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 560px) {
+  h1 { font-size: 30px; letter-spacing: -0.3px; }
 }
 .lead {
   max-width: 800px;
