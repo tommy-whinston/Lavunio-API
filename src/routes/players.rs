@@ -42,7 +42,7 @@ async fn build_profile(pool: &sqlx::PgPool, row: ProfileRow) -> Result<PlayerPro
 
     let modes = sqlx::query_as::<_, PlayerModeItem>(
         r#"
-        SELECT DISTINCT m.id, m.slug, m.title, m.short_description, m.cover_url, m.status,
+        SELECT m.id, m.slug, m.title, m.short_description, m.cover_url, m.status,
                (SELECT COUNT(*) FROM mode_events e
                 WHERE e.mode_id = m.id AND e.event = 'install') AS installs
         FROM modes m
