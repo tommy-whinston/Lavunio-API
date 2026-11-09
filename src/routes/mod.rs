@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod auth;
+pub mod authors;
 pub mod catalog;
 pub mod community;
 pub mod game_auth;
@@ -32,6 +33,10 @@ pub fn router() -> Router<AppState> {
         .route("/v1/auth/password/forgot", post(auth::forgot_password))
         .route("/v1/auth/password/reset", post(auth::reset_password))
         .route("/reset-password", get(auth::reset_password_page))
+        .route(
+            "/v1/me/author-application",
+            get(authors::status).post(authors::apply),
+        )
         .route("/v1/me", get(auth::me))
         .route("/v1/me/identities", get(auth::identities))
         .route("/v1/game/session", post(game_auth::create_game_session))
@@ -159,6 +164,15 @@ pub fn router() -> Router<AppState> {
         .route(
             "/v1/admin/appeals/{id}/resolve",
             post(admin::resolve_appeal),
+        )
+        .route("/v1/admin/author-applications", get(authors::admin_list))
+        .route(
+            "/v1/admin/author-applications/{id}/approve",
+            post(authors::admin_approve),
+        )
+        .route(
+            "/v1/admin/author-applications/{id}/reject",
+            post(authors::admin_reject),
         )
         .route("/v1/admin/moderation/{id}/approve", post(admin::approve))
         .route("/v1/admin/moderation/{id}/reject", post(admin::reject))

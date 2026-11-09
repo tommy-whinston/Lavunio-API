@@ -320,6 +320,46 @@ pub struct ResolveAppealRequest {
     pub note: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthorApplication {
+    pub id: Uuid,
+    pub message: String,
+    pub links: String,
+    pub status: String,
+    pub note: String,
+    pub created_at: DateTime<Utc>,
+    pub reviewed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthorApplicationItem {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub username: String,
+    pub display_name: String,
+    pub message: String,
+    pub links: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthorApplicationRequest {
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub links: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RejectAuthorApplicationRequest {
+    #[serde(default)]
+    pub note: String,
+}
+
 #[derive(Debug, Clone, Serialize, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseAppealItem {
