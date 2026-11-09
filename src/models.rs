@@ -615,27 +615,6 @@ pub struct ActivityFeedItem {
 
 #[derive(Debug, Clone, Serialize, FromRow)]
 #[serde(rename_all = "camelCase")]
-pub struct CommentItem {
-    pub id: Uuid,
-    pub parent_id: Option<Uuid>,
-    pub body: String,
-    pub user_id: Uuid,
-    pub username: String,
-    pub display_name: String,
-    pub avatar_url: Option<String>,
-    pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommentRequest {
-    #[serde(default)]
-    pub body: String,
-    pub parent_id: Option<Uuid>,
-}
-
-#[derive(Debug, Clone, Serialize, FromRow)]
-#[serde(rename_all = "camelCase")]
 pub struct ChatMessageItem {
     pub id: Uuid,
     pub sender_id: Uuid,

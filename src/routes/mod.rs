@@ -3,7 +3,6 @@ pub mod auth;
 pub mod authors;
 pub mod catalog;
 pub mod chat;
-pub mod comments;
 pub mod community;
 pub mod feed;
 pub mod friends;
@@ -66,11 +65,6 @@ pub fn router() -> Router<AppState> {
             get(notifications::list).post(notifications::mark_read),
         )
         .route("/v1/feed", get(feed::feed))
-        .route(
-            "/v1/modes/{slug}/comments",
-            get(comments::list).post(comments::create),
-        )
-        .route("/v1/comments/{id}", delete(comments::delete))
         .route(
             "/v1/chat/direct/{username}",
             get(chat::direct).post(chat::send_direct),
