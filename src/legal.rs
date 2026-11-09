@@ -149,6 +149,7 @@ fn page(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="index,follow">
+<meta name="theme-color" content="#080808">
 <title>{title} — Lavunio</title>
 <meta name="description" content="{lead}">
 <link rel="canonical" href="https://lavunio.pro{path}">
@@ -546,8 +547,12 @@ footer {
 @media (max-width: 560px) {
   .meta span { font-size: 10px; }
   .lead { font-size: 15.5px; }
-  .toc nav { grid-template-columns: 1fr; }
+  .toc nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .toc a { font-size: 11px; }
   .foot { flex-direction: column; align-items: flex-start; }
+}
+@media (max-width: 390px) {
+  .toc nav { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -664,7 +669,7 @@ const TERMS_RU: &str = r##"
 <ul>
 <li>Вы можете прекратить использование сервиса в любое время и запросить удаление аккаунта через поддержку.</li>
 <li>Мы можем приостановить или заблокировать аккаунт за нарушение Соглашения, правил сообщества или законодательства.</li>
-<li>Положения об интеллектуальной собственности, ответственности и разрешении споров сохраняют силу после прекращения доступа.</li>
+<li>Положения об интеллектуальной собственности и ограничении ответственности сохраняют силу после прекращения доступа.</li>
 </ul>
 </section>
 <section id="changes">
@@ -779,7 +784,7 @@ const TERMS_EN: &str = r##"
 <ul>
 <li>You may stop using the service at any time and request account deletion through support.</li>
 <li>We may suspend or block an account for violating these terms, the community rules or the law.</li>
-<li>Provisions on intellectual property, liability and dispute resolution survive termination.</li>
+<li>Provisions on intellectual property and limitation of liability survive termination.</li>
 </ul>
 </section>
 <section id="changes">
