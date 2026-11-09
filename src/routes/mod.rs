@@ -6,6 +6,7 @@ pub mod community;
 pub mod game_auth;
 pub mod health;
 pub mod news;
+pub mod players;
 pub mod publisher;
 pub mod teams;
 
@@ -39,6 +40,8 @@ pub fn router() -> Router<AppState> {
             get(authors::status).post(authors::apply),
         )
         .route("/v1/me/teams", get(teams::mine))
+        .route("/v1/me/profile", put(players::update_profile))
+        .route("/v1/users/{username}", get(players::profile))
         .route("/v1/me/team-invitations", get(teams::invitations))
         .route(
             "/v1/me/team-invitations/{id}/accept",

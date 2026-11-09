@@ -490,6 +490,63 @@ pub struct TeamMember {
     pub role: String,
 }
 
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerTeamItem {
+    pub id: Uuid,
+    pub slug: String,
+    pub title: String,
+    pub role: String,
+    pub verified: bool,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerModeItem {
+    pub id: Uuid,
+    pub slug: String,
+    pub title: String,
+    pub short_description: String,
+    pub cover_url: Option<String>,
+    pub status: String,
+    pub installs: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerStats {
+    pub modes: i64,
+    pub downloads: i64,
+    pub installs: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerProfile {
+    pub id: Uuid,
+    pub username: String,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub bio: String,
+    pub skin_url: Option<String>,
+    pub skin_model: String,
+    pub cape_url: Option<String>,
+    pub role: String,
+    pub created_at: DateTime<Utc>,
+    pub teams: Vec<PlayerTeamItem>,
+    pub modes: Vec<PlayerModeItem>,
+    pub stats: PlayerStats,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProfileRequest {
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default)]
+    pub bio: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamInviteRequest {
