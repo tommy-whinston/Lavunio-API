@@ -383,6 +383,34 @@ pub struct TeamRequest {
     pub banner_url: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamInviteRequest {
+    #[serde(default)]
+    pub username: String,
+    #[serde(default)]
+    pub role: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamMemberRoleRequest {
+    #[serde(default)]
+    pub role: String,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamInvitationItem {
+    pub id: Uuid,
+    pub team_id: Uuid,
+    pub team_slug: String,
+    pub team_title: String,
+    pub inviter_name: String,
+    pub role: String,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthorApplication {

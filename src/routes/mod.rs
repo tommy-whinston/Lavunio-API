@@ -39,10 +39,24 @@ pub fn router() -> Router<AppState> {
             get(authors::status).post(authors::apply),
         )
         .route("/v1/me/teams", get(teams::mine))
+        .route("/v1/me/team-invitations", get(teams::invitations))
+        .route(
+            "/v1/me/team-invitations/{id}/accept",
+            post(teams::accept_invitation),
+        )
+        .route(
+            "/v1/me/team-invitations/{id}/decline",
+            post(teams::decline_invitation),
+        )
         .route("/v1/teams", post(teams::create))
         .route(
             "/v1/teams/{slug}",
             get(teams::profile).put(teams::update).delete(teams::archive),
+        )
+        .route("/v1/teams/{id}/invitations", post(teams::invite))
+        .route(
+            "/v1/teams/{id}/members/{user_id}",
+            put(teams::set_member_role).delete(teams::remove_member),
         )
         .route("/v1/me", get(auth::me))
         .route("/v1/me/identities", get(auth::identities))
