@@ -71,6 +71,11 @@ pub async fn register(
     if !auth::validate_email(&email) {
         return Err(ApiError::BadRequest("Укажите корректный email".to_string()));
     }
+    if !body.accept_terms {
+        return Err(ApiError::BadRequest(
+            "Нужно принять условия использования и политику конфиденциальности".to_string(),
+        ));
+    }
     if !auth::validate_password(&body.password) {
         return Err(ApiError::BadRequest(
             "Пароль должен быть от 8 до 128 символов".to_string(),

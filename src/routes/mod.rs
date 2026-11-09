@@ -24,6 +24,9 @@ use crate::AppState;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/v1/health", get(health::health))
+        .route("/legal/terms", get(crate::legal::terms))
+        .route("/legal/privacy", get(crate::legal::privacy))
+        .route("/legal/rules", get(crate::legal::rules))
         .route("/v1/metrics", get(health::metrics))
         .route("/v1/auth/register", post(auth::register))
         .route("/v1/auth/login", post(auth::login))

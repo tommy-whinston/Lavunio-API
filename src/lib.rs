@@ -3,6 +3,7 @@ pub mod build_scan;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod legal;
 pub mod mail;
 pub mod metrics;
 pub mod models;

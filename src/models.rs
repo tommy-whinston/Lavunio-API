@@ -959,6 +959,10 @@ pub struct AuthTokens {
     pub refresh_expires_in: i64,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterRequest {
@@ -966,6 +970,8 @@ pub struct RegisterRequest {
     pub password: String,
     pub username: Option<String>,
     pub display_name: Option<String>,
+    #[serde(default = "default_true")]
+    pub accept_terms: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
