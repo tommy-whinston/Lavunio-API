@@ -844,7 +844,7 @@ const PRIVACY_RU: &str = r##"
 <h2>2. Какие данные мы собираем</h2>
 <ul>
 <li><strong>Аккаунт:</strong> email, username, отображаемое имя, хеш пароля, роль, статус подтверждения почты.</li>
-<li><strong>Профиль:</strong> аватар, описание, Minecraft UUID, скины и плащи.</li>
+<li><strong>Профиль:</strong> аватар, описание, Minecraft UUID и скины.</li>
 <li><strong>Безопасность:</strong> метаданные сессий, IP-адрес, user-agent, время входа и служебные идентификаторы.</li>
 <li><strong>Социальные функции:</strong> друзья, заявки, личные сообщения, членство в командах, уведомления.</li>
 <li><strong>Публикация:</strong> метаданные режимов и релизов, сборки, обложки, скриншоты и результаты проверки архивов.</li>
@@ -948,7 +948,7 @@ const PRIVACY_EN: &str = r##"
 <h2>2. Data we collect</h2>
 <ul>
 <li><strong>Account:</strong> email, username, display name, password hash, role and email verification status.</li>
-<li><strong>Profile:</strong> avatar, bio, Minecraft UUID, skins and capes.</li>
+<li><strong>Profile:</strong> avatar, bio, Minecraft UUID and skins.</li>
 <li><strong>Security:</strong> session metadata, IP address, user agent, sign-in timestamps and service identifiers.</li>
 <li><strong>Social features:</strong> friends, requests, direct messages, team membership and notifications.</li>
 <li><strong>Publishing:</strong> mode and release metadata, builds, covers, screenshots and archive scan results.</li>

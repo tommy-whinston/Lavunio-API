@@ -139,7 +139,7 @@ async fn register(pool: PgPool) -> (AppState, tempfile::TempDir, Router, String,
 }
 
 #[sqlx::test]
-async fn skin_and_cape_are_published_in_profile(pool: PgPool) {
+async fn skin_is_published_in_profile(pool: PgPool) {
     let (_state, _dir, app, token, _password) = register(pool).await;
 
     let (status, me) = send(app.clone(), Method::GET, "/v1/me", Some(&token), None).await;
@@ -177,32 +177,6 @@ async fn skin_and_cape_are_published_in_profile(pool: PgPool) {
     let textures = textures_payload(&profile);
     assert_eq!(textures["textures"]["SKIN"]["url"], skin_url);
     assert_eq!(textures["textures"]["SKIN"]["metadata"]["model"], "slim");
-
-    let (status, cape) = send_bytes(
-        app.clone(),
-        Method::PUT,
-        "/v1/me/cape",
-        &token,
-        Bytes::from(png_bytes(64, 32, [26, 155, 239, 255])),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{cape}");
-    assert!(cape["capeUrl"]
-        .as_str()
-        .unwrap()
-        .contains("/uploads/skins/"));
-
-    let (status, profile) = send(
-        app.clone(),
-        Method::GET,
-        &format!("/sessionserver/session/minecraft/profile/{uuid}"),
-        None,
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{profile}");
-    let textures = textures_payload(&profile);
-    assert_eq!(textures["textures"]["CAPE"]["url"], cape["capeUrl"]);
 
     let (status, deleted) = send(app, Method::DELETE, "/v1/me/skin", Some(&token), None).await;
     assert_eq!(status, StatusCode::OK, "{deleted}");

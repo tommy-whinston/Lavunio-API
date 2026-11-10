@@ -125,9 +125,6 @@ fn profile_json(user: &GameUserRow) -> Value {
             }),
         );
     }
-    if let Some(url) = user.cape_url.as_deref().filter(|url| !url.is_empty()) {
-        textures.insert("CAPE".to_string(), json!({ "url": url }));
-    }
 
     let properties = if textures.is_empty() {
         json!([])
@@ -637,24 +634,12 @@ fn png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     Some((width, height))
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum TextureKind {
-    Skin,
-    Cape,
-}
-
-fn sanitize_texture(bytes: &[u8], kind: TextureKind) -> Result<Vec<u8>, String> {
+fn sanitize_texture(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let Some((width, height)) = png_dimensions(bytes) else {
         return Err("Файл должен быть PNG".to_string());
     };
-    match kind {
-        TextureKind::Skin if !matches!((width, height), (64, 64) | (64, 32)) => {
-            return Err("Скин должен быть 64×64 или 64×32".to_string());
-        }
-        TextureKind::Cape if !matches!((width, height), (64, 32) | (22, 17)) => {
-            return Err("Плащ должен быть 64×32 или 22×17".to_string());
-        }
-        _ => {}
+    if !matches!((width, height), (64, 64) | (64, 32)) {
+        return Err("Скин должен быть 64×64 или 64×32".to_string());
     }
 
     let image = image::load_from_memory_with_format(bytes, ImageFormat::Png)
@@ -663,12 +648,7 @@ fn sanitize_texture(bytes: &[u8], kind: TextureKind) -> Result<Vec<u8>, String> 
         return Err("Размер PNG не совпадает с заголовком".to_string());
     }
 
-    let mut rgba = image.to_rgba8();
-    if kind == TextureKind::Cape && (width, height) == (22, 17) {
-        let mut padded = image::RgbaImage::new(64, 32);
-        image::imageops::overlay(&mut padded, &rgba, 0, 0);
-        rgba = padded;
-    }
+    let rgba = image.to_rgba8();
 
     let mut output = Vec::new();
     image::codecs::png::PngEncoder::new(&mut output)
@@ -715,7 +695,7 @@ pub async fn upload_skin(
             "Скин должен быть 64×64 или 64×32".to_string(),
         ));
     }
-    let sanitized = sanitize_texture(&bytes, TextureKind::Skin).map_err(ApiError::BadRequest)?;
+    let sanitized = sanitize_texture(&bytes).map_err(ApiError::BadRequest)?;
     let hash = sha256_hex(&sanitized);
     let key = format!("skins/{hash}.png");
     state
@@ -743,56 +723,6 @@ pub async fn delete_skin(
     let user = auth::require_user(&state.pool, &headers).await?;
     sqlx::query(
         "UPDATE users SET skin_url = NULL, skin_updated_at = now(), updated_at = now() WHERE id = $1",
-    )
-    .bind(user.id)
-    .execute(&state.pool)
-    .await?;
-    Ok(Json(auth::account_by_id(&state.pool, user.id).await?))
-}
-
-pub async fn upload_cape(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    bytes: Bytes,
-) -> Result<Json<AccountUser>, ApiError> {
-    let user = auth::require_user(&state.pool, &headers).await?;
-    let Some((width, height)) = png_dimensions(&bytes) else {
-        return Err(ApiError::BadRequest(
-            "Плащ должен быть PNG-файлом".to_string(),
-        ));
-    };
-    if !matches!((width, height), (64, 32) | (22, 17)) {
-        return Err(ApiError::BadRequest(
-            "Плащ должен быть 64×32 или 22×17".to_string(),
-        ));
-    }
-    let sanitized = sanitize_texture(&bytes, TextureKind::Cape).map_err(ApiError::BadRequest)?;
-    let hash = sha256_hex(&sanitized);
-    let key = format!("skins/{hash}.png");
-    state
-        .storage
-        .put_bytes(&key, &sanitized, Some("image/png"))
-        .await
-        .map_err(ApiError::Internal)?;
-    let url = state.storage.public_url(&key);
-    sqlx::query(
-        "UPDATE users SET cape_url = $2, skin_updated_at = now(), updated_at = now() WHERE id = $1",
-    )
-    .bind(user.id)
-    .bind(&url)
-    .execute(&state.pool)
-    .await?;
-
-    Ok(Json(auth::account_by_id(&state.pool, user.id).await?))
-}
-
-pub async fn delete_cape(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<AccountUser>, ApiError> {
-    let user = auth::require_user(&state.pool, &headers).await?;
-    sqlx::query(
-        "UPDATE users SET cape_url = NULL, skin_updated_at = now(), updated_at = now() WHERE id = $1",
     )
     .bind(user.id)
     .execute(&state.pool)
