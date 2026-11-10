@@ -167,9 +167,9 @@ async fn register_login_refresh_logout_flow(pool: PgPool) {
         .expect("new refresh")
         .to_string();
     assert_ne!(new_access, login_access);
-    assert_ne!(new_refresh, login_refresh);
+    assert_eq!(new_refresh, login_refresh);
 
-    let (status, _) = send(
+    let (status, refreshed_again) = send(
         app.clone(),
         Method::POST,
         "/v1/auth/refresh",
@@ -177,19 +177,33 @@ async fn register_login_refresh_logout_flow(pool: PgPool) {
         Some(json!({ "refreshToken": login_refresh })),
     )
     .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(status, StatusCode::OK, "{refreshed_again}");
+    let latest_access = refreshed_again["tokens"]["accessToken"]
+        .as_str()
+        .expect("latest access")
+        .to_string();
 
     let (status, logged_out) = send(
         app.clone(),
         Method::POST,
         "/v1/auth/logout",
-        Some(&new_access),
+        Some(&latest_access),
         Some(json!({ "refreshToken": new_refresh })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{logged_out}");
 
-    let (status, _) = send(app, Method::GET, "/v1/me", Some(&new_access), None).await;
+    let (status, _) = send(app.clone(), Method::GET, "/v1/me", Some(&latest_access), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let (status, _) = send(
+        app,
+        Method::POST,
+        "/v1/auth/refresh",
+        None,
+        Some(json!({ "refreshToken": login_refresh })),
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
