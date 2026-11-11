@@ -32,9 +32,9 @@ impl Mailer {
         self.api_key.is_some()
     }
 
-    pub async fn send_verification(&self, to: &str, token: &str) -> Result<(), String> {
-        let link = format!("{}/v1/auth/verify-email?token={token}", self.base_url);
-        let subject = "Подтвердите почту в Lavunio";
+    pub async fn send_verification_code(&self, to: &str, code: &str) -> Result<(), String> {
+        let subject = "Код подтверждения Lavunio";
+        let email = escape_html(to);
         let html = format!(
             r#"<!doctype html>
 <html lang="ru">
@@ -44,17 +44,12 @@ impl Mailer {
     <div style="margin-top:24px;background:#161b22;border:1px solid #30363d;border-radius:14px;padding:28px;">
       <h1 style="margin:0 0 12px;font-size:20px;">Подтвердите почту</h1>
       <p style="margin:0 0 20px;line-height:1.6;color:#9da7b3;">
-        Вы зарегистрировались в Lavunio. Нажмите кнопку ниже, чтобы подтвердить адрес
-        <strong style="color:#e6edf3;">{to}</strong>.
+        Вы зарегистрировались в Lavunio. Введите код ниже в лаунчере, чтобы подтвердить адрес
+        <strong style="color:#e6edf3;">{email}</strong>.
       </p>
-      <a href="{link}" style="display:inline-block;background:#2ea043;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:10px;">
-        Подтвердить почту
-      </a>
+      <div style="margin:0 0 20px;padding:16px 20px;border:1px solid #30363d;border-radius:12px;background:#0d1117;text-align:center;font-size:34px;font-weight:800;letter-spacing:8px;color:#7ee787;">{code}</div>
       <p style="margin:20px 0 0;font-size:13px;line-height:1.6;color:#6e7681;">
-        Ссылка действует 24 часа. Если вы не регистрировались в Lavunio, просто проигнорируйте письмо.
-      </p>
-      <p style="margin:16px 0 0;font-size:12px;line-height:1.6;color:#6e7681;word-break:break-all;">
-        Если кнопка не работает, откройте ссылку: {link}
+        Код действует 15 минут. Если вы не регистрировались в Lavunio, просто проигнорируйте письмо.
       </p>
     </div>
     <p style="margin:20px 0 0;font-size:12px;color:#6e7681;">Lavunio — платформа игровых режимов Minecraft.</p>
@@ -63,7 +58,44 @@ impl Mailer {
 </html>"#
         );
         let text = format!(
-            "Подтвердите почту в Lavunio\n\nОткройте ссылку, чтобы подтвердить {to}:\n{link}\n\nСсылка действует 24 часа. Если вы не регистрировались, проигнорируйте письмо."
+            "Подтвердите почту в Lavunio\n\nКод подтверждения: {code}\n\nВведите его в лаунчере. Код действует 15 минут. Если вы не регистрировались, проигнорируйте письмо."
+        );
+        self.send(to, subject, &html, &text).await
+    }
+
+    pub async fn send_login_code(
+        &self,
+        to: &str,
+        code: &str,
+        ip: Option<&str>,
+    ) -> Result<(), String> {
+        let subject = "Новое место входа в Lavunio";
+        let place = escape_html(ip.unwrap_or("неизвестное место"));
+        let email = escape_html(to);
+        let html = format!(
+            r#"<!doctype html>
+<html lang="ru">
+<body style="margin:0;padding:0;background:#0f1115;font-family:Segoe UI,Arial,sans-serif;color:#e6edf3;">
+  <div style="max-width:520px;margin:0 auto;padding:40px 24px;">
+    <div style="font-size:22px;font-weight:700;letter-spacing:2px;color:#7ee787;">LAVUNIO</div>
+    <div style="margin-top:24px;background:#161b22;border:1px solid #30363d;border-radius:14px;padding:28px;">
+      <h1 style="margin:0 0 12px;font-size:20px;">Обнаружено новое место входа</h1>
+      <p style="margin:0 0 20px;line-height:1.6;color:#9da7b3;">
+        В аккаунт <strong style="color:#e6edf3;">{email}</strong> пытаются войти с нового места:
+        <strong style="color:#e6edf3;">{place}</strong>. Если это вы, введите код ниже в лаунчере.
+      </p>
+      <div style="margin:0 0 20px;padding:16px 20px;border:1px solid #30363d;border-radius:12px;background:#0d1117;text-align:center;font-size:34px;font-weight:800;letter-spacing:8px;color:#7ee787;">{code}</div>
+      <p style="margin:20px 0 0;font-size:13px;line-height:1.6;color:#6e7681;">
+        Код действует 10 минут. Если вы не пытались войти, смените пароль и проигнорируйте письмо.
+      </p>
+    </div>
+    <p style="margin:20px 0 0;font-size:12px;color:#6e7681;">Lavunio — платформа игровых режимов Minecraft.</p>
+  </div>
+</body>
+</html>"#
+        );
+        let text = format!(
+            "Новое место входа в Lavunio\n\nВ аккаунт {to} пытаются войти с нового места: {place}.\nКод подтверждения: {code}\n\nВведите его в лаунчере. Код действует 10 минут. Если вы не пытались войти, смените пароль."
         );
         self.send(to, subject, &html, &text).await
     }
@@ -137,4 +169,13 @@ impl Mailer {
         tracing::info!(to = %to, subject = %subject, "email sent");
         Ok(())
     }
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }

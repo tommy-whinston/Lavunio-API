@@ -10,6 +10,7 @@ pub enum Bucket {
     Login,
     Register,
     Reset,
+    Verify,
 }
 
 impl Bucket {
@@ -18,6 +19,7 @@ impl Bucket {
             Self::Login => "login",
             Self::Register => "register",
             Self::Reset => "reset",
+            Self::Verify => "verify",
         }
     }
 }
@@ -34,6 +36,7 @@ pub struct RateLimiter {
     login_limit: u32,
     register_limit: u32,
     reset_limit: u32,
+    verify_limit: u32,
     entries: Mutex<HashMap<String, Entry>>,
 }
 
@@ -45,6 +48,7 @@ impl RateLimiter {
             login_limit: config.rate_limit_login,
             register_limit: config.rate_limit_register,
             reset_limit: config.rate_limit_reset,
+            verify_limit: config.rate_limit_verify,
             entries: Mutex::new(HashMap::new()),
         }
     }
@@ -57,6 +61,7 @@ impl RateLimiter {
             Bucket::Login => self.login_limit,
             Bucket::Register => self.register_limit,
             Bucket::Reset => self.reset_limit,
+            Bucket::Verify => self.verify_limit,
         };
         if limit == 0 {
             return Ok(());

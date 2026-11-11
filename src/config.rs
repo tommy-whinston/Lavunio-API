@@ -35,6 +35,7 @@ pub struct Config {
     pub rate_limit_login: u32,
     pub rate_limit_register: u32,
     pub rate_limit_reset: u32,
+    pub rate_limit_verify: u32,
 }
 
 impl Config {
@@ -101,7 +102,7 @@ impl Config {
             .filter(|value| !value.is_empty());
         let access_token_ttl_secs = env_u64("LAVUNIO_ACCESS_TTL_SECS", 15 * 60);
         let refresh_token_ttl_secs = env_u64("LAVUNIO_REFRESH_TTL_SECS", 30 * 24 * 60 * 60);
-        let email_token_ttl_secs = env_u64("LAVUNIO_EMAIL_TTL_SECS", 24 * 60 * 60);
+        let email_token_ttl_secs = env_u64("LAVUNIO_EMAIL_TTL_SECS", 15 * 60);
         let reset_token_ttl_secs = env_u64("LAVUNIO_RESET_TTL_SECS", 60 * 60);
         let game_token_ttl_secs = env_u64("LAVUNIO_GAME_TTL_SECS", 30 * 24 * 60 * 60);
         let skin_domains =
@@ -111,6 +112,7 @@ impl Config {
         let rate_limit_login = env_u32("LAVUNIO_RATE_LIMIT_LOGIN", 10);
         let rate_limit_register = env_u32("LAVUNIO_RATE_LIMIT_REGISTER", 10);
         let rate_limit_reset = env_u32("LAVUNIO_RATE_LIMIT_RESET", 5);
+        let rate_limit_verify = env_u32("LAVUNIO_RATE_LIMIT_VERIFY", 10);
 
         Self {
             database_url,
@@ -143,6 +145,7 @@ impl Config {
             rate_limit_login,
             rate_limit_register,
             rate_limit_reset,
+            rate_limit_verify,
         }
     }
 
@@ -178,6 +181,7 @@ impl Config {
             rate_limit_login: 1000,
             rate_limit_register: 1000,
             rate_limit_reset: 1000,
+            rate_limit_verify: 1000,
         }
     }
 }

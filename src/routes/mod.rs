@@ -30,6 +30,7 @@ pub fn router() -> Router<AppState> {
         .route("/v1/metrics", get(health::metrics))
         .route("/v1/auth/register", post(auth::register))
         .route("/v1/auth/login", post(auth::login))
+        .route("/v1/auth/login/verify", post(auth::verify_login))
         .route("/v1/auth/refresh", post(auth::refresh))
         .route("/v1/auth/logout", post(auth::logout))
         .route(

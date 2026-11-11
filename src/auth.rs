@@ -104,6 +104,23 @@ pub fn random_token() -> String {
     format!("lv_{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
 
+pub fn random_code() -> String {
+    let bytes = Uuid::new_v4().into_bytes();
+    let value = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) % 1_000_000;
+    format!("{value:06}")
+}
+
+pub fn same_place(left: &str, right: &str) -> bool {
+    use std::net::IpAddr;
+    match (left.parse::<IpAddr>(), right.parse::<IpAddr>()) {
+        (Ok(IpAddr::V4(left)), Ok(IpAddr::V4(right))) => left.octets()[..3] == right.octets()[..3],
+        (Ok(IpAddr::V6(left)), Ok(IpAddr::V6(right))) => {
+            left.segments()[..4] == right.segments()[..4]
+        }
+        _ => left == right,
+    }
+}
+
 pub fn normalize_email(value: &str) -> String {
     value.trim().to_lowercase()
 }
@@ -593,5 +610,23 @@ mod tests {
             "tommywhinston"
         );
         assert_eq!(username_from_email("A_B@example.com"), "playerab");
+    }
+
+    #[test]
+    fn codes_are_six_digits() {
+        for _ in 0..20 {
+            let code = random_code();
+            assert_eq!(code.len(), 6);
+            assert!(code.chars().all(|ch| ch.is_ascii_digit()));
+        }
+    }
+
+    #[test]
+    fn same_place_compares_network_prefix() {
+        assert!(same_place("1.2.3.4", "1.2.3.99"));
+        assert!(!same_place("1.2.3.4", "1.2.4.4"));
+        assert!(same_place("2001:db8:1:2::1", "2001:db8:1:2::99"));
+        assert!(!same_place("2001:db8:1:2::1", "2001:db8:1:3::1"));
+        assert!(same_place("unknown", "unknown"));
     }
 }

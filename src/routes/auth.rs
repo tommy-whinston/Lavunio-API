@@ -11,13 +11,15 @@ use crate::auth;
 use crate::error::ApiError;
 use crate::models::{
     AccountUser, AuthResponse, ForgotPasswordRequest, ForgotPasswordResponse, IdentitySummary,
-    LoginRequest, LogoutRequest, RefreshRequest, RegisterRequest, RegisterResponse,
-    ResetPasswordRequest, SimpleStatus, VerificationResponse, VerifyEmailRequest,
+    LoginChallengeResponse, LoginRequest, LoginResponse, LogoutRequest, RefreshRequest,
+    RegisterRequest, RegisterResponse, ResetPasswordRequest, SimpleStatus, VerificationResponse,
+    VerifyEmailRequest, VerifyLoginRequest,
 };
 use crate::rate_limit::Bucket;
-use crate::AppState;
+use crate::{AppState, LoginChallenge};
 
 const MAX_TTL_SECS: u64 = 365 * 24 * 60 * 60;
+const LOGIN_CODE_TTL_SECS: i64 = 10 * 60;
 
 #[derive(Debug, FromRow)]
 struct LoginRow {
@@ -126,7 +128,7 @@ pub async fn register(
     }
 
     let password_hash = auth::hash_password(body.password.clone()).await?;
-    let verification_token = auth::random_token();
+    let verification_token = auth::random_code();
     let user_id = Uuid::new_v4();
     let expires_at = Utc::now() + ttl(state.config.email_token_ttl_secs);
 
@@ -233,7 +235,7 @@ pub async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<LoginRequest>,
-) -> Result<Json<AuthResponse>, ApiError> {
+) -> Result<Json<LoginResponse>, ApiError> {
     let email = auth::normalize_email(&body.email);
     state.rate_limiter.check(Bucket::Login, &email)?;
     let row = sqlx::query_as::<_, LoginRow>(
@@ -269,6 +271,100 @@ pub async fn login(
 
     let user =
         user.ok_or_else(|| ApiError::Unauthorized("Неверный email или пароль".to_string()))?;
+    let (user_agent, ip) = auth::session_metadata(&headers);
+    let last_ip = sqlx::query_scalar::<_, String>(
+        "SELECT ip FROM sessions WHERE user_id = $1 AND ip IS NOT NULL ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(user.id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let new_place = match (last_ip.as_deref(), ip.as_deref()) {
+        (Some(previous), Some(current)) => !auth::same_place(previous, current),
+        _ => false,
+    };
+    if new_place {
+        let target_email = user
+            .email
+            .clone()
+            .ok_or_else(|| ApiError::BadRequest("У аккаунта нет email".to_string()))?;
+        let code = auth::random_code();
+        let challenge_id = auth::random_token();
+        state.login_challenges.add(
+            challenge_id.clone(),
+            LoginChallenge {
+                user_id: user.id,
+                code_hash: auth::hash_token(&code),
+                expires_at: Utc::now() + Duration::seconds(LOGIN_CODE_TTL_SECS),
+                attempts: 0,
+            },
+        );
+        if state.config.dev_mode {
+            tracing::warn!(email = %target_email, code = %code, "login code issued (dev mode)");
+        } else {
+            if let Err(error) = state
+                .mailer
+                .send_login_code(&target_email, &code, ip.as_deref())
+                .await
+            {
+                tracing::error!(email = %target_email, error = %error, "failed to send login code");
+            }
+        }
+        return Ok(Json(LoginResponse::Challenge(LoginChallengeResponse {
+            requires_code: true,
+            challenge_id,
+            email: target_email,
+            code: state.config.dev_mode.then_some(code),
+        })));
+    }
+
+    let tokens = auth::create_session(
+        &state.pool,
+        user.id,
+        user_agent.as_deref(),
+        ip.as_deref(),
+        state.config.access_token_ttl_secs,
+        state.config.refresh_token_ttl_secs,
+    )
+    .await?;
+
+    Ok(Json(LoginResponse::Auth(AuthResponse {
+        user: user.account(),
+        tokens,
+    })))
+}
+
+pub async fn verify_login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<VerifyLoginRequest>,
+) -> Result<Json<AuthResponse>, ApiError> {
+    let challenge_id = body.challenge_id.trim();
+    let code = body.code.trim();
+    if challenge_id.is_empty() || code.is_empty() {
+        return Err(ApiError::BadRequest("Введите код из письма".to_string()));
+    }
+    state
+        .rate_limiter
+        .check(Bucket::Verify, &format!("login:{challenge_id}"))?;
+    let challenge = state
+        .login_challenges
+        .verify(challenge_id, &auth::hash_token(code))
+        .ok_or_else(|| ApiError::BadRequest("Неверный или истёкший код".to_string()))?;
+
+    let user = sqlx::query_as::<_, LoginRow>(
+        r#"
+        SELECT id, username, display_name, email, email_verified_at, avatar_url, role,
+               created_at, password_hash, minecraft_uuid, skin_url, skin_model, cape_url
+        FROM users
+        WHERE id = $1
+        "#,
+    )
+    .bind(challenge.user_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::Unauthorized("Аккаунт не найден".to_string()))?;
+
     let (user_agent, ip) = auth::session_metadata(&headers);
     let tokens = auth::create_session(
         &state.pool,
@@ -362,8 +458,13 @@ pub async fn identities(
 
 pub async fn verify_email(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(body): Json<VerifyEmailRequest>,
 ) -> Result<Json<SimpleStatus>, ApiError> {
+    let ip = auth::client_ip(&headers).unwrap_or_else(|| "unknown".to_string());
+    state
+        .rate_limiter
+        .check(Bucket::Verify, &format!("email:{ip}"))?;
     consume_verification_token(&state.pool, body.token.trim()).await?;
     Ok(Json(SimpleStatus {
         ok: true,
@@ -559,7 +660,7 @@ async fn send_verification_email(state: &AppState, email: &str, token: &str) {
         tracing::warn!(email = %email, "verification email skipped: RESEND_API_KEY is not configured");
         return;
     }
-    if let Err(error) = state.mailer.send_verification(email, token).await {
+    if let Err(error) = state.mailer.send_verification_code(email, token).await {
         tracing::error!(email = %email, error = %error, "failed to send verification email");
     }
 }
@@ -589,8 +690,11 @@ pub async fn resend_verification(
         .email
         .clone()
         .ok_or_else(|| ApiError::BadRequest("У аккаунта нет email".to_string()))?;
+    state
+        .rate_limiter
+        .check(Bucket::Verify, &format!("resend:{}", user.id))?;
 
-    let token = auth::random_token();
+    let token = auth::random_code();
     let expires_at = Utc::now() + ttl(state.config.email_token_ttl_secs);
     let mut tx = state.pool.begin().await?;
     sqlx::query(

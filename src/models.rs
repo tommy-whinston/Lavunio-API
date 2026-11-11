@@ -1004,6 +1004,30 @@ pub struct VerificationResponse {
     pub verification_token: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoginChallengeResponse {
+    pub requires_code: bool,
+    pub challenge_id: String,
+    pub email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum LoginResponse {
+    Auth(AuthResponse),
+    Challenge(LoginChallengeResponse),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifyLoginRequest {
+    pub challenge_id: String,
+    pub code: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForgotPasswordRequest {

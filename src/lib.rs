@@ -11,7 +11,8 @@ pub mod rate_limit;
 pub mod routes;
 pub mod storage;
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use axum::extract::{Request, State};
 use axum::middleware::Next;
@@ -31,6 +32,50 @@ use crate::rate_limit::RateLimiter;
 use crate::storage::Storage;
 
 #[derive(Clone)]
+pub struct LoginChallenge {
+    pub user_id: uuid::Uuid,
+    pub code_hash: String,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub attempts: u32,
+}
+
+#[derive(Default)]
+pub struct LoginChallenges {
+    entries: Mutex<HashMap<String, LoginChallenge>>,
+}
+
+impl LoginChallenges {
+    pub fn add(&self, id: String, challenge: LoginChallenge) {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if entries.len() > 1_000 {
+            let now = chrono::Utc::now();
+            entries.retain(|_, item| item.expires_at > now);
+        }
+        entries.insert(id, challenge);
+    }
+
+    pub fn verify(&self, id: &str, code_hash: &str) -> Option<LoginChallenge> {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let entry = entries.get_mut(id)?;
+        if entry.expires_at <= chrono::Utc::now() || entry.attempts >= 5 {
+            entries.remove(id);
+            return None;
+        }
+        entry.attempts += 1;
+        if entry.code_hash != code_hash {
+            return None;
+        }
+        entries.remove(id)
+    }
+}
+
+#[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
     pub pool: PgPool,
@@ -38,6 +83,7 @@ pub struct AppState {
     pub mailer: Arc<Mailer>,
     pub rate_limiter: Arc<RateLimiter>,
     pub metrics: Arc<Metrics>,
+    pub login_challenges: Arc<LoginChallenges>,
 }
 
 impl AppState {
@@ -46,6 +92,7 @@ impl AppState {
             rate_limiter: Arc::new(RateLimiter::from_config(&config)),
             metrics: Arc::new(Metrics::new()),
             mailer: Arc::new(Mailer::new(&config)),
+            login_challenges: Arc::new(LoginChallenges::default()),
             config,
             pool,
             storage,
