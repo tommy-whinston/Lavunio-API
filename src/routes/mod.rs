@@ -120,6 +120,7 @@ pub fn router() -> Router<AppState> {
                 .delete(game_auth::delete_skin)
                 .layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
         )
+        .route("/v1/me/skin/model", put(game_auth::update_skin_model))
         .route("/authserver/authenticate", post(game_auth::authenticate))
         .route("/authserver/refresh", post(game_auth::refresh))
         .route("/authserver/validate", post(game_auth::validate))

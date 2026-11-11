@@ -76,6 +76,12 @@ pub struct SkinQuery {
     model: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSkinModelRequest {
+    model: String,
+}
+
 #[derive(Debug, FromRow)]
 pub struct GameUserRow {
     id: Uuid,
@@ -713,6 +719,24 @@ pub async fn upload_skin(
     .execute(&state.pool)
     .await?;
 
+    Ok(Json(auth::account_by_id(&state.pool, user.id).await?))
+}
+
+pub async fn update_skin_model(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<UpdateSkinModelRequest>,
+) -> Result<Json<AccountUser>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let model = body.model.trim().to_lowercase();
+    if !matches!(model.as_str(), "classic" | "slim") {
+        return Err(ApiError::BadRequest("model: classic или slim".to_string()));
+    }
+    sqlx::query("UPDATE users SET skin_model = $2, updated_at = now() WHERE id = $1")
+        .bind(user.id)
+        .bind(&model)
+        .execute(&state.pool)
+        .await?;
     Ok(Json(auth::account_by_id(&state.pool, user.id).await?))
 }
 
