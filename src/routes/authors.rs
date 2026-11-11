@@ -132,9 +132,7 @@ pub async fn admin_approve(
     .ok_or_else(|| ApiError::NotFound("Заявка не найдена".to_string()))?;
     let (user_id, status) = row;
     if status != "open" {
-        return Err(ApiError::Conflict(
-            "Заявка уже рассмотрена".to_string(),
-        ));
+        return Err(ApiError::Conflict("Заявка уже рассмотрена".to_string()));
     }
 
     sqlx::query("UPDATE users SET role = 'author', updated_at = now() WHERE id = $1")
@@ -208,9 +206,7 @@ pub async fn admin_reject(
     .ok_or_else(|| ApiError::NotFound("Заявка не найдена".to_string()))?;
     let (user_id, status) = row;
     if status != "open" {
-        return Err(ApiError::Conflict(
-            "Заявка уже рассмотрена".to_string(),
-        ));
+        return Err(ApiError::Conflict("Заявка уже рассмотрена".to_string()));
     }
 
     sqlx::query(

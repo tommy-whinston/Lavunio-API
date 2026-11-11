@@ -193,7 +193,14 @@ async fn register_login_refresh_logout_flow(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK, "{logged_out}");
 
-    let (status, _) = send(app.clone(), Method::GET, "/v1/me", Some(&latest_access), None).await;
+    let (status, _) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/me",
+        Some(&latest_access),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
     let (status, _) = send(
@@ -212,7 +219,7 @@ async fn password_reset_revokes_sessions(pool: PgPool) {
     let (state, _dir) = test_state(pool);
     let app = app(state);
 
-    let registered = register(&app, "reset@example.com", "reset_user", "old password 123").await;
+    let registered = register(&app, "reset@example.com", "resetuser", "old password 123").await;
     let old_access = registered["tokens"]["accessToken"]
         .as_str()
         .expect("access token")
@@ -281,7 +288,7 @@ async fn duplicate_email_and_username_rejected(pool: PgPool) {
     let (state, _dir) = test_state(pool);
     let app = app(state);
 
-    register(&app, "taken@example.com", "taken_user", "password 123").await;
+    register(&app, "taken@example.com", "takenuser", "password 123").await;
 
     let (status, body) = send(
         app.clone(),
@@ -290,7 +297,7 @@ async fn duplicate_email_and_username_rejected(pool: PgPool) {
         None,
         Some(json!({
             "email": "TAKEN@example.com",
-            "username": "another_user",
+            "username": "anotheruser",
             "password": "password 123"
         })),
     )
@@ -304,7 +311,7 @@ async fn duplicate_email_and_username_rejected(pool: PgPool) {
         None,
         Some(json!({
             "email": "another@example.com",
-            "username": "TAKEN_USER",
+            "username": "takenuser",
             "password": "password 123"
         })),
     )
@@ -317,7 +324,7 @@ async fn resend_verification_invalidates_previous_token(pool: PgPool) {
     let (state, _dir) = test_state(pool);
     let app = app(state);
 
-    let registered = register(&app, "resend@example.com", "resend_user", "password 123").await;
+    let registered = register(&app, "resend@example.com", "resenduser", "password 123").await;
     let access = registered["tokens"]["accessToken"]
         .as_str()
         .expect("access token")
@@ -430,6 +437,7 @@ async fn registration_validates_input(pool: PgPool) {
         json!({ "email": "not-an-email", "username": "player", "password": "password 123" }),
         json!({ "email": "ok@example.com", "username": "player", "password": "short" }),
         json!({ "email": "ok@example.com", "username": "-bad-", "password": "password 123" }),
+        json!({ "email": "ok@example.com", "username": "Tommy_Whinston", "password": "password 123" }),
     ] {
         let (status, body) = send(
             app.clone(),
@@ -441,4 +449,94 @@ async fn registration_validates_input(pool: PgPool) {
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     }
+}
+
+#[sqlx::test]
+async fn profile_id_and_nickname_can_be_changed(pool: PgPool) {
+    let (state, _dir) = test_state(pool);
+    let app = app(state);
+
+    let registered = register(&app, "old@example.com", "oldid", "password 123").await;
+    let access = registered["tokens"]["accessToken"]
+        .as_str()
+        .expect("access token")
+        .to_string();
+
+    let (status, body) = send(
+        app.clone(),
+        Method::PUT,
+        "/v1/me/profile",
+        Some(&access),
+        Some(json!({
+            "username": "Tommy_Whinston",
+            "displayName": "Tommy_Whinston",
+            "bio": "hello"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, profile) = send(
+        app.clone(),
+        Method::GET,
+        "/v1/users/tommywhinston",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{profile}");
+    assert_eq!(profile["username"], "tommywhinston");
+    assert_eq!(profile["displayName"], "Tommy_Whinston");
+    assert_eq!(profile["bio"], "hello");
+
+    let (status, _) = send(app.clone(), Method::GET, "/v1/users/oldid", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, body) = send(
+        app.clone(),
+        Method::PUT,
+        "/v1/me/profile",
+        Some(&access),
+        Some(json!({
+            "username": "tommywhinston",
+            "displayName": "12345678901234567",
+            "bio": ""
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+
+    let other = register(&app, "other@example.com", "otherid", "password 123").await;
+    let other_access = other["tokens"]["accessToken"]
+        .as_str()
+        .expect("access token")
+        .to_string();
+
+    let (status, body) = send(
+        app.clone(),
+        Method::PUT,
+        "/v1/me/profile",
+        Some(&other_access),
+        Some(json!({
+            "username": "tommywhinston",
+            "displayName": "Other",
+            "bio": ""
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+
+    let (status, body) = send(
+        app.clone(),
+        Method::PUT,
+        "/v1/me/profile",
+        Some(&other_access),
+        Some(json!({ "displayName": "Other", "bio": "" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (status, profile) = send(app, Method::GET, "/v1/users/otherid", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{profile}");
+    assert_eq!(profile["displayName"], "Other");
 }

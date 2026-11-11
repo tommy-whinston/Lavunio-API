@@ -495,12 +495,11 @@ pub async fn approve(
         admin.username,
         release_id
     );
-    if let Ok((author_id, slug)) = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT author_id, slug FROM modes WHERE id = $1",
-    )
-    .bind(release.mode_id)
-    .fetch_one(&state.pool)
-    .await
+    if let Ok((author_id, slug)) =
+        sqlx::query_as::<_, (Uuid, String)>("SELECT author_id, slug FROM modes WHERE id = $1")
+            .bind(release.mode_id)
+            .fetch_one(&state.pool)
+            .await
     {
         notifications::create(
             &state.pool,
@@ -577,12 +576,11 @@ pub async fn reject(
         release_id,
         note
     );
-    if let Ok((author_id, slug)) = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT author_id, slug FROM modes WHERE id = $1",
-    )
-    .bind(release.mode_id)
-    .fetch_one(&state.pool)
-    .await
+    if let Ok((author_id, slug)) =
+        sqlx::query_as::<_, (Uuid, String)>("SELECT author_id, slug FROM modes WHERE id = $1")
+            .bind(release.mode_id)
+            .fetch_one(&state.pool)
+            .await
     {
         notifications::create(
             &state.pool,
@@ -657,9 +655,7 @@ pub async fn resolve_appeal(
     .ok_or_else(|| ApiError::NotFound("Апелляция не найдена".to_string()))?;
 
     if appeal.status != "open" {
-        return Err(ApiError::Conflict(
-            "Апелляция уже рассмотрена".to_string(),
-        ));
+        return Err(ApiError::Conflict("Апелляция уже рассмотрена".to_string()));
     }
     if appeal.release_status != "rejected" {
         return Err(ApiError::BadRequest(

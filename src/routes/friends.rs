@@ -9,10 +9,7 @@ use crate::models::{FriendItem, FriendRequestItem, FriendRequests, SimpleStatus}
 use crate::routes::notifications;
 use crate::AppState;
 
-async fn user_by_username(
-    pool: &sqlx::PgPool,
-    username: &str,
-) -> Result<(Uuid, String), ApiError> {
+async fn user_by_username(pool: &sqlx::PgPool, username: &str) -> Result<(Uuid, String), ApiError> {
     sqlx::query_as::<_, (Uuid, String)>(
         "SELECT id, display_name FROM users WHERE lower(username) = lower($1)",
     )
@@ -103,7 +100,9 @@ pub async fn add(
     let user = auth::require_user(&state.pool, &headers).await?;
     let (friend_id, friend_name) = user_by_username(&state.pool, &username).await?;
     if friend_id == user.id {
-        return Err(ApiError::BadRequest("Нельзя добавить себя в друзья".to_string()));
+        return Err(ApiError::BadRequest(
+            "Нельзя добавить себя в друзья".to_string(),
+        ));
     }
 
     let existing = sqlx::query_as::<_, (Uuid, Uuid, String)>(
@@ -153,14 +152,12 @@ pub async fn add(
     }
 
     let request_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO friend_requests (id, requester_id, addressee_id) VALUES ($1, $2, $3)",
-    )
-    .bind(request_id)
-    .bind(user.id)
-    .bind(friend_id)
-    .execute(&state.pool)
-    .await?;
+    sqlx::query("INSERT INTO friend_requests (id, requester_id, addressee_id) VALUES ($1, $2, $3)")
+        .bind(request_id)
+        .bind(user.id)
+        .bind(friend_id)
+        .execute(&state.pool)
+        .await?;
     notifications::create(
         &state.pool,
         friend_id,

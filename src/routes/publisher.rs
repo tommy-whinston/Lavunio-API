@@ -11,9 +11,10 @@ use uuid::Uuid;
 use crate::auth::{self, AuthUser};
 use crate::error::ApiError;
 use crate::models::{
-    AppealRequest, Asset, CompleteAssetRequest, CoverResponse, CreateModeRequest, CreateModeResponse,
-    CreateReleaseRequest, CreateReleaseResponse, ModeEventRequest, PublisherMode, PublisherModeRow,
-    PublisherStats, Release, SimpleStatus, UploadUrlRequest, UploadUrlResponse,
+    AppealRequest, Asset, CompleteAssetRequest, CoverResponse, CreateModeRequest,
+    CreateModeResponse, CreateReleaseRequest, CreateReleaseResponse, ModeEventRequest,
+    PublisherMode, PublisherModeRow, PublisherStats, Release, SimpleStatus, UploadUrlRequest,
+    UploadUrlResponse,
 };
 use crate::storage::{Storage, StorageKind};
 use crate::AppState;
@@ -71,7 +72,10 @@ async fn ensure_mode_owner(pool: &PgPool, user: &AuthUser, mode_id: Uuid) -> Res
         .bind(user.id)
         .fetch_optional(pool)
         .await?;
-        if matches!(role.as_deref(), Some("owner") | Some("admin") | Some("publisher")) {
+        if matches!(
+            role.as_deref(),
+            Some("owner") | Some("admin") | Some("publisher")
+        ) {
             return Ok(());
         }
     }
@@ -202,7 +206,10 @@ pub async fn create_mode(
         .fetch_optional(&state.pool)
         .await?;
         if user.role != "admin"
-            && !matches!(role.as_deref(), Some("owner") | Some("admin") | Some("publisher"))
+            && !matches!(
+                role.as_deref(),
+                Some("owner") | Some("admin") | Some("publisher")
+            )
         {
             return Err(ApiError::Forbidden(
                 "Создавать режимы команды могут владелец, админ и публикатор".to_string(),
@@ -255,13 +262,12 @@ pub async fn create_mode(
         if username.is_empty() {
             continue;
         }
-        let co_author = sqlx::query_scalar::<_, Uuid>(
-            "SELECT id FROM users WHERE lower(username) = lower($1)",
-        )
-        .bind(username)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| ApiError::BadRequest(format!("Соавтор не найден: {username}")))?;
+        let co_author =
+            sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE lower(username) = lower($1)")
+                .bind(username)
+                .fetch_optional(&state.pool)
+                .await?
+                .ok_or_else(|| ApiError::BadRequest(format!("Соавтор не найден: {username}")))?;
         if co_author == user.id {
             continue;
         }
@@ -803,11 +809,7 @@ pub async fn appeal_release(
     .execute(&state.pool)
     .await?;
 
-    tracing::info!(
-        "author {} appealed release {}",
-        user.username,
-        release_id
-    );
+    tracing::info!("author {} appealed release {}", user.username, release_id);
 
     Ok(Json(SimpleStatus {
         ok: true,

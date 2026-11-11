@@ -125,11 +125,18 @@ pub async fn update_profile(
     Json(body): Json<UpdateProfileRequest>,
 ) -> Result<Json<SimpleStatus>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
-    let display_name = body.display_name.trim();
-    if display_name.is_empty() || display_name.chars().count() > 48 {
+    let username = match body.username.trim() {
+        "" => user.username.to_ascii_lowercase(),
+        value => value.to_ascii_lowercase(),
+    };
+    if !auth::validate_username(&username) {
         return Err(ApiError::BadRequest(
-            "Отображаемое имя: от 1 до 48 символов".to_string(),
+            "ID профиля: 3–20 символов, только латиница и цифры".to_string(),
         ));
+    }
+    let display_name = body.display_name.trim();
+    if display_name.is_empty() || display_name.chars().count() > 16 {
+        return Err(ApiError::BadRequest("Ник: от 1 до 16 символов".to_string()));
     }
     let bio = body.bio.trim();
     if bio.chars().count() > 500 {
@@ -137,8 +144,19 @@ pub async fn update_profile(
             "Статус: не больше 500 символов".to_string(),
         ));
     }
-    sqlx::query("UPDATE users SET display_name = $2, bio = $3, updated_at = now() WHERE id = $1")
+    let taken = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM users WHERE lower(username) = lower($1) AND id <> $2)",
+    )
+    .bind(&username)
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    if taken {
+        return Err(ApiError::Conflict("Этот ID уже занят".to_string()));
+    }
+    sqlx::query("UPDATE users SET username = $2, display_name = $3, bio = $4, updated_at = now() WHERE id = $1")
         .bind(user.id)
+        .bind(&username)
         .bind(display_name)
         .bind(bio)
         .execute(&state.pool)

@@ -544,6 +544,8 @@ pub struct PlayerProfile {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProfileRequest {
     #[serde(default)]
+    pub username: String,
+    #[serde(default)]
     pub display_name: String,
     #[serde(default)]
     pub bio: String,

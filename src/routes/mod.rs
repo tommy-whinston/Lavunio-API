@@ -86,7 +86,9 @@ pub fn router() -> Router<AppState> {
         .route("/v1/teams", post(teams::create))
         .route(
             "/v1/teams/{slug}",
-            get(teams::profile).put(teams::update).delete(teams::archive),
+            get(teams::profile)
+                .put(teams::update)
+                .delete(teams::archive),
         )
         .route("/v1/teams/{id}/invitations", post(teams::invite))
         .route(

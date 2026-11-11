@@ -79,7 +79,11 @@ async fn fetch_team(pool: &sqlx::PgPool, team_id: Uuid) -> Result<Team, ApiError
     .ok_or_else(|| ApiError::NotFound("Команда не найдена".to_string()))
 }
 
-async fn team_role(pool: &sqlx::PgPool, team_id: Uuid, user_id: Uuid) -> Result<Option<String>, ApiError> {
+async fn team_role(
+    pool: &sqlx::PgPool,
+    team_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<String>, ApiError> {
     Ok(sqlx::query_scalar::<_, String>(
         "SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2",
     )
@@ -161,13 +165,11 @@ pub async fn create(
         }
         other => ApiError::from(other),
     })?;
-    sqlx::query(
-        "INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'owner')",
-    )
-    .bind(id)
-    .bind(user.id)
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query("INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'owner')")
+        .bind(id)
+        .bind(user.id)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
 
     let team = fetch_team(&state.pool, id).await?;
@@ -363,7 +365,10 @@ pub async fn invite(
         invitee.0,
         "team_invite",
         "Приглашение в команду",
-        &format!("{} приглашает тебя в команду «{}»", user.display_name, team.title),
+        &format!(
+            "{} приглашает тебя в команду «{}»",
+            user.display_name, team.title
+        ),
         Some("team"),
         Some(&team.slug),
     )
@@ -391,9 +396,7 @@ pub async fn accept_invitation(
         ));
     }
     if invitation.3 != "pending" {
-        return Err(ApiError::Conflict(
-            "Приглашение уже обработано".to_string(),
-        ));
+        return Err(ApiError::Conflict("Приглашение уже обработано".to_string()));
     }
     sqlx::query(
         "INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
@@ -589,7 +592,9 @@ pub async fn request_join(
 
     let message = body.message.trim();
     if message.chars().count() > 1000 {
-        return Err(ApiError::BadRequest("Сообщение слишком длинное".to_string()));
+        return Err(ApiError::BadRequest(
+            "Сообщение слишком длинное".to_string(),
+        ));
     }
     sqlx::query(
         "INSERT INTO team_join_requests (id, team_id, user_id, message) VALUES ($1, $2, $3, $4)",
@@ -710,9 +715,7 @@ pub async fn transfer(
     .await?
     .ok_or_else(|| ApiError::NotFound("Пользователь не найден".to_string()))?;
     if target.0 == user.id {
-        return Err(ApiError::BadRequest(
-            "Ты уже владелец команды".to_string(),
-        ));
+        return Err(ApiError::BadRequest("Ты уже владелец команды".to_string()));
     }
     let target_role = team_role(&state.pool, team_id, target.0)
         .await?
@@ -847,7 +850,12 @@ pub async fn admin_verify(
         .await?;
     Ok(Json(SimpleStatus {
         ok: true,
-        status: if body.verified { "verified" } else { "unverified" }.to_string(),
+        status: if body.verified {
+            "verified"
+        } else {
+            "unverified"
+        }
+        .to_string(),
     }))
 }
 
@@ -916,12 +924,11 @@ pub async fn profile(
     .fetch_one(&state.pool)
     .await?;
 
-    let followers = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM team_followers WHERE team_id = $1",
-    )
-    .bind(team.id)
-    .fetch_one(&state.pool)
-    .await?;
+    let followers =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM team_followers WHERE team_id = $1")
+            .bind(team.id)
+            .fetch_one(&state.pool)
+            .await?;
 
     let news = sqlx::query_as::<_, TeamNewsItem>(
         r#"

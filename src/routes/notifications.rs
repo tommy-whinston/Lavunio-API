@@ -70,10 +70,12 @@ pub async fn mark_read(
 ) -> Result<Json<NotificationsResponse>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
     if body.ids.is_empty() {
-        sqlx::query("UPDATE notifications SET read_at = now() WHERE user_id = $1 AND read_at IS NULL")
-            .bind(user.id)
-            .execute(&state.pool)
-            .await?;
+        sqlx::query(
+            "UPDATE notifications SET read_at = now() WHERE user_id = $1 AND read_at IS NULL",
+        )
+        .bind(user.id)
+        .execute(&state.pool)
+        .await?;
     } else {
         sqlx::query("UPDATE notifications SET read_at = now() WHERE user_id = $1 AND id = ANY($2)")
             .bind(user.id)

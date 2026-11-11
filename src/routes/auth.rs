@@ -87,11 +87,11 @@ pub async fn register(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(str::to_string)
+        .map(|value| value.to_ascii_lowercase())
         .unwrap_or_else(|| auth::username_from_email(&email));
     if !auth::validate_username(&username) {
         return Err(ApiError::BadRequest(
-            "Имя пользователя: 3–20 символов, латиница, цифры и подчёркивание".to_string(),
+            "ID профиля: 3–20 символов, только латиница и цифры".to_string(),
         ));
     }
 
@@ -100,8 +100,8 @@ pub async fn register(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| value.chars().take(48).collect::<String>())
-        .unwrap_or_else(|| username.clone());
+        .map(|value| value.chars().take(16).collect::<String>())
+        .unwrap_or_else(|| username.chars().take(16).collect());
 
     let email_taken = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = $1)",

@@ -8,8 +8,8 @@ const MAX_UNCOMPRESSED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_FILE_BYTES: u64 = 1024 * 1024 * 1024;
 
 const SUSPICIOUS_EXTENSIONS: &[&str] = &[
-    ".exe", ".msi", ".bat", ".cmd", ".ps1", ".scr", ".vbs", ".vbe", ".js", ".jse", ".wsf",
-    ".wsh", ".lnk", ".url", ".reg", ".hta", ".cpl", ".pif", ".gadget", ".msc",
+    ".exe", ".msi", ".bat", ".cmd", ".ps1", ".scr", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh",
+    ".lnk", ".url", ".reg", ".hta", ".cpl", ".pif", ".gadget", ".msc",
 ];
 
 pub fn scan_zip(bytes: &[u8]) -> Result<Value, String> {

@@ -42,13 +42,12 @@ pub async fn direct(
     Path(username): Path<String>,
 ) -> Result<Json<Vec<ChatMessageItem>>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
-    let other = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM users WHERE lower(username) = lower($1)",
-    )
-    .bind(username.trim())
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| ApiError::NotFound("Игрок не найден".to_string()))?;
+    let other =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE lower(username) = lower($1)")
+            .bind(username.trim())
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("Игрок не найден".to_string()))?;
     Ok(Json(messages(&state.pool, user.id, other).await?))
 }
 
@@ -59,15 +58,16 @@ pub async fn send_direct(
     Json(body): Json<ChatSendRequest>,
 ) -> Result<Json<ChatMessageItem>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
-    let other = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM users WHERE lower(username) = lower($1)",
-    )
-    .bind(username.trim())
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| ApiError::NotFound("Игрок не найден".to_string()))?;
+    let other =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE lower(username) = lower($1)")
+            .bind(username.trim())
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("Игрок не найден".to_string()))?;
     if other == user.id {
-        return Err(ApiError::BadRequest("Нельзя писать самому себе".to_string()));
+        return Err(ApiError::BadRequest(
+            "Нельзя писать самому себе".to_string(),
+        ));
     }
     let text = body.body.trim();
     if text.is_empty() || text.chars().count() > 2000 {
@@ -160,15 +160,13 @@ pub async fn send_team(
         ));
     }
     let id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO chat_messages (id, sender_id, team_id, body) VALUES ($1, $2, $3, $4)",
-    )
-    .bind(id)
-    .bind(user.id)
-    .bind(team_id)
-    .bind(text)
-    .execute(&state.pool)
-    .await?;
+    sqlx::query("INSERT INTO chat_messages (id, sender_id, team_id, body) VALUES ($1, $2, $3, $4)")
+        .bind(id)
+        .bind(user.id)
+        .bind(team_id)
+        .bind(text)
+        .execute(&state.pool)
+        .await?;
     let item = sqlx::query_as::<_, ChatMessageItem>(
         r#"
         SELECT m.id, m.sender_id, u.username AS sender_username,

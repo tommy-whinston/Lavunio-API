@@ -130,8 +130,7 @@ pub fn validate_username(value: &str) -> bool {
     (3..=20).contains(&length)
         && value
             .chars()
-            .enumerate()
-            .all(|(index, ch)| ch.is_ascii_alphanumeric() || (index > 0 && ch == '_'))
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
 }
 
 pub fn validate_password(value: &str) -> bool {
@@ -142,9 +141,9 @@ pub fn username_from_email(email: &str) -> String {
     let local = email.split('@').next().unwrap_or_default();
     let mut name: String = local
         .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .map(|ch| ch.to_ascii_lowercase())
         .collect();
-    name = name.trim_start_matches('_').to_string();
     if name.len() < 3 {
         name = format!("player{name}");
     }
@@ -571,4 +570,28 @@ pub async fn create_token_for_user(
 
 fn ttl_secs(value: u64) -> i64 {
     value.min(MAX_TOKEN_TTL_SECS) as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn username_allows_only_lowercase_latin_and_digits() {
+        assert!(validate_username("tommywhinston"));
+        assert!(validate_username("player123"));
+        assert!(!validate_username("Tommy_Whinston"));
+        assert!(!validate_username("tommy-whinston"));
+        assert!(!validate_username("ab"));
+        assert!(!validate_username("a".repeat(21).as_str()));
+    }
+
+    #[test]
+    fn username_from_email_normalizes_to_lowercase_id() {
+        assert_eq!(
+            username_from_email("Tommy.Whinston@example.com"),
+            "tommywhinston"
+        );
+        assert_eq!(username_from_email("A_B@example.com"), "playerab");
+    }
 }
