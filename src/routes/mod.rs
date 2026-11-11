@@ -29,6 +29,8 @@ pub fn router() -> Router<AppState> {
         .route("/legal/logo.png", get(crate::legal::logo))
         .route("/v1/metrics", get(health::metrics))
         .route("/v1/auth/register", post(auth::register))
+        .route("/v1/auth/register/verify", post(auth::register_verify))
+        .route("/v1/auth/register/resend", post(auth::resend_registration))
         .route("/v1/auth/login", post(auth::login))
         .route("/v1/auth/login/verify", post(auth::verify_login))
         .route("/v1/auth/refresh", post(auth::refresh))

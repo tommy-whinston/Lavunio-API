@@ -1006,6 +1006,28 @@ pub struct VerificationResponse {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RegisterPendingResponse {
+    pub requires_verification: bool,
+    pub email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verification_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifyRegistrationRequest {
+    pub email: String,
+    pub code: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResendRegistrationRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LoginChallengeResponse {
     pub requires_code: bool,
     pub challenge_id: String,
@@ -1019,6 +1041,7 @@ pub struct LoginChallengeResponse {
 pub enum LoginResponse {
     Auth(AuthResponse),
     Challenge(LoginChallengeResponse),
+    Verification(RegisterPendingResponse),
 }
 
 #[derive(Debug, Clone, Deserialize)]

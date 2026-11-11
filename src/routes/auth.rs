@@ -12,8 +12,9 @@ use crate::error::ApiError;
 use crate::models::{
     AccountUser, AuthResponse, ForgotPasswordRequest, ForgotPasswordResponse, IdentitySummary,
     LoginChallengeResponse, LoginRequest, LoginResponse, LogoutRequest, RefreshRequest,
-    RegisterRequest, RegisterResponse, ResetPasswordRequest, SimpleStatus, VerificationResponse,
-    VerifyEmailRequest, VerifyLoginRequest,
+    RegisterPendingResponse, RegisterRequest, ResendRegistrationRequest, ResetPasswordRequest,
+    SimpleStatus, VerificationResponse, VerifyEmailRequest, VerifyLoginRequest,
+    VerifyRegistrationRequest,
 };
 use crate::rate_limit::Bucket;
 use crate::{AppState, LoginChallenge};
@@ -65,7 +66,7 @@ pub async fn register(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<RegisterRequest>,
-) -> Result<Json<RegisterResponse>, ApiError> {
+) -> Result<Json<RegisterPendingResponse>, ApiError> {
     let ip = auth::client_ip(&headers).unwrap_or_else(|| "unknown".to_string());
     state.rate_limiter.check(Bucket::Register, &ip)?;
 
@@ -133,11 +134,10 @@ pub async fn register(
     let expires_at = Utc::now() + ttl(state.config.email_token_ttl_secs);
 
     let mut tx = state.pool.begin().await?;
-    let inserted = sqlx::query_as::<_, (DateTime<Utc>, Uuid)>(
+    let inserted = sqlx::query(
         r#"
         INSERT INTO users (id, username, display_name, email, password_hash, role)
         VALUES ($1, $2, $3, $4, $5, 'player')
-        RETURNING created_at, minecraft_uuid
         "#,
     )
     .bind(user_id)
@@ -145,22 +145,19 @@ pub async fn register(
     .bind(&display_name)
     .bind(&email)
     .bind(&password_hash)
-    .fetch_one(&mut *tx)
+    .execute(&mut *tx)
     .await;
 
-    let (created_at, minecraft_uuid) = match inserted {
-        Ok(row) => row,
-        Err(error) => {
-            if let sqlx::Error::Database(database_error) = &error {
-                if database_error.code().as_deref() == Some("23505") {
-                    return Err(ApiError::Conflict(
-                        "Email или имя пользователя уже заняты".to_string(),
-                    ));
-                }
+    if let Err(error) = inserted {
+        if let sqlx::Error::Database(database_error) = &error {
+            if database_error.code().as_deref() == Some("23505") {
+                return Err(ApiError::Conflict(
+                    "Email или имя пользователя уже заняты".to_string(),
+                ));
             }
-            return Err(error.into());
         }
-    };
+        return Err(error.into());
+    }
 
     sqlx::query(
         r#"
@@ -190,17 +187,6 @@ pub async fn register(
 
     tx.commit().await?;
 
-    let (user_agent, ip) = auth::session_metadata(&headers);
-    let tokens = auth::create_session(
-        &state.pool,
-        user_id,
-        user_agent.as_deref(),
-        ip.as_deref(),
-        state.config.access_token_ttl_secs,
-        state.config.refresh_token_ttl_secs,
-    )
-    .await?;
-
     if state.config.dev_mode {
         tracing::info!(
             email = %email,
@@ -211,23 +197,79 @@ pub async fn register(
         send_verification_email(&state, &email, &verification_token).await;
     }
 
-    Ok(Json(RegisterResponse {
-        user: AccountUser {
-            id: user_id,
-            username,
-            display_name,
-            email: Some(email),
-            email_verified: false,
-            avatar_url: None,
-            role: "player".to_string(),
-            created_at,
-            minecraft_uuid: Some(minecraft_uuid.simple().to_string()),
-            skin_url: None,
-            skin_model: "classic".to_string(),
-            cape_url: None,
-        },
-        tokens,
+    Ok(Json(RegisterPendingResponse {
+        requires_verification: true,
+        email,
         verification_token: state.config.dev_mode.then_some(verification_token),
+    }))
+}
+
+pub async fn register_verify(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<VerifyRegistrationRequest>,
+) -> Result<Json<AuthResponse>, ApiError> {
+    let email = auth::normalize_email(&body.email);
+    let ip = auth::client_ip(&headers).unwrap_or_else(|| "unknown".to_string());
+    state
+        .rate_limiter
+        .check(Bucket::Verify, &format!("register-verify:{ip}"))?;
+    let user = sqlx::query_as::<_, LoginRow>(
+        r#"
+        SELECT id, username, display_name, email, email_verified_at, avatar_url, role,
+               created_at, password_hash, minecraft_uuid, skin_url, skin_model, cape_url
+        FROM users
+        WHERE lower(email) = $1 AND email_verified_at IS NULL
+        "#,
+    )
+    .bind(&email)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::BadRequest("Неверный или истёкший код".to_string()))?;
+
+    consume_verification_token(&state.pool, body.code.trim(), Some(user.id)).await?;
+
+    let (user_agent, ip) = auth::session_metadata(&headers);
+    let tokens = auth::create_session(
+        &state.pool,
+        user.id,
+        user_agent.as_deref(),
+        ip.as_deref(),
+        state.config.access_token_ttl_secs,
+        state.config.refresh_token_ttl_secs,
+    )
+    .await?;
+
+    Ok(Json(AuthResponse {
+        user: auth::account_by_id(&state.pool, user.id).await?,
+        tokens,
+    }))
+}
+
+pub async fn resend_registration(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<ResendRegistrationRequest>,
+) -> Result<Json<RegisterPendingResponse>, ApiError> {
+    let email = auth::normalize_email(&body.email);
+    let ip = auth::client_ip(&headers).unwrap_or_else(|| "unknown".to_string());
+    state
+        .rate_limiter
+        .check(Bucket::Verify, &format!("register-resend:{ip}"))?;
+    let user = sqlx::query_as::<_, (Uuid,)>(
+        "SELECT id FROM users WHERE lower(email) = $1 AND email_verified_at IS NULL",
+    )
+    .bind(&email)
+    .fetch_optional(&state.pool)
+    .await?;
+    let mut code = None;
+    if let Some((user_id,)) = user {
+        code = Some(issue_verification_code(&state, user_id, &email).await?);
+    }
+    Ok(Json(RegisterPendingResponse {
+        requires_verification: true,
+        email,
+        verification_token: state.config.dev_mode.then_some(code).flatten(),
     }))
 }
 
@@ -271,6 +313,18 @@ pub async fn login(
 
     let user =
         user.ok_or_else(|| ApiError::Unauthorized("Неверный email или пароль".to_string()))?;
+    if user.email_verified_at.is_none() {
+        let target_email = user
+            .email
+            .clone()
+            .ok_or_else(|| ApiError::BadRequest("У аккаунта нет email".to_string()))?;
+        let code = issue_verification_code(&state, user.id, &target_email).await?;
+        return Ok(Json(LoginResponse::Verification(RegisterPendingResponse {
+            requires_verification: true,
+            email: target_email,
+            verification_token: state.config.dev_mode.then_some(code),
+        })));
+    }
     let (user_agent, ip) = auth::session_metadata(&headers);
     let last_ip = sqlx::query_scalar::<_, String>(
         "SELECT ip FROM sessions WHERE user_id = $1 AND ip IS NOT NULL ORDER BY created_at DESC LIMIT 1",
@@ -465,14 +519,18 @@ pub async fn verify_email(
     state
         .rate_limiter
         .check(Bucket::Verify, &format!("email:{ip}"))?;
-    consume_verification_token(&state.pool, body.token.trim()).await?;
+    consume_verification_token(&state.pool, body.token.trim(), None).await?;
     Ok(Json(SimpleStatus {
         ok: true,
         status: "email_verified".to_string(),
     }))
 }
 
-async fn consume_verification_token(pool: &sqlx::PgPool, token: &str) -> Result<(), ApiError> {
+async fn consume_verification_token(
+    pool: &sqlx::PgPool,
+    token: &str,
+    expected_user: Option<Uuid>,
+) -> Result<(), ApiError> {
     if token.is_empty() {
         return Err(ApiError::BadRequest("Нужен токен".to_string()));
     }
@@ -493,6 +551,11 @@ async fn consume_verification_token(pool: &sqlx::PgPool, token: &str) -> Result<
             "Ссылка подтверждения недействительна или истекла".to_string(),
         ));
     };
+    if expected_user.is_some_and(|expected| expected != user_id) {
+        return Err(ApiError::BadRequest(
+            "Неверный или истёкший код".to_string(),
+        ));
+    }
 
     let mut tx = pool.begin().await?;
     sqlx::query("UPDATE email_verification_tokens SET used_at = now() WHERE id = $1")
@@ -519,7 +582,7 @@ pub async fn verify_email_page(
     Query(query): Query<VerifyEmailQuery>,
 ) -> Html<String> {
     let token = query.token.unwrap_or_default();
-    match consume_verification_token(&state.pool, token.trim()).await {
+    match consume_verification_token(&state.pool, token.trim(), None).await {
         Ok(()) => Html(status_page(
             "Почта подтверждена",
             "Готово! Вернитесь в Lavunio — адрес успешно подтверждён.",
@@ -654,6 +717,41 @@ const RESET_PASSWORD_PAGE: &str = r#"<!doctype html>
   </script>
 </body>
 </html>"#;
+
+async fn issue_verification_code(
+    state: &AppState,
+    user_id: Uuid,
+    email: &str,
+) -> Result<String, ApiError> {
+    let code = auth::random_code();
+    let expires_at = Utc::now() + ttl(state.config.email_token_ttl_secs);
+    let mut tx = state.pool.begin().await?;
+    sqlx::query(
+        "UPDATE email_verification_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO email_verification_tokens (id, user_id, token_hash, expires_at)
+        VALUES ($1, $2, $3, $4)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(user_id)
+    .bind(auth::hash_token(&code))
+    .bind(expires_at)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    if state.config.dev_mode {
+        tracing::info!(email = %email, token = %code, "email verification token issued (dev mode)");
+    } else {
+        send_verification_email(state, email, &code).await;
+    }
+    Ok(code)
+}
 
 async fn send_verification_email(state: &AppState, email: &str, token: &str) {
     if !state.mailer.enabled() {

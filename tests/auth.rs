@@ -57,7 +57,7 @@ async fn send(
     (status, value)
 }
 
-async fn register(app: &Router, email: &str, username: &str, password: &str) -> Value {
+async fn register_pending(app: &Router, email: &str, username: &str, password: &str) -> Value {
     let (status, body) = send(
         app.clone(),
         Method::POST,
@@ -74,23 +74,52 @@ async fn register(app: &Router, email: &str, username: &str, password: &str) -> 
     body
 }
 
+async fn register(app: &Router, email: &str, username: &str, password: &str) -> Value {
+    let pending = register_pending(app, email, username, password).await;
+    let Some(code) = pending["verificationToken"].as_str() else {
+        return pending;
+    };
+    let (status, body) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/auth/register/verify",
+        None,
+        Some(json!({ "email": email, "code": code })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    body
+}
+
 #[sqlx::test]
 async fn register_login_refresh_logout_flow(pool: PgPool) {
     let (state, _dir) = test_state(pool);
     let app = app(state);
     let password = "correct horse battery";
 
-    let registered = register(&app, "Steve@Example.com", "steve", password).await;
+    let pending = register_pending(&app, "Steve@Example.com", "steve", password).await;
+    assert_eq!(pending["requiresVerification"], true);
+    assert_eq!(pending["email"], "steve@example.com");
+    assert!(pending["tokens"].is_null());
+    let verification_token = pending["verificationToken"]
+        .as_str()
+        .expect("dev verification token")
+        .to_string();
+    let (status, registered) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/auth/register/verify",
+        None,
+        Some(json!({ "email": "steve@example.com", "code": verification_token })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{registered}");
     assert_eq!(registered["user"]["email"], "steve@example.com");
-    assert_eq!(registered["user"]["emailVerified"], false);
+    assert_eq!(registered["user"]["emailVerified"], true);
     assert_eq!(registered["tokens"]["tokenType"], "Bearer");
     let access = registered["tokens"]["accessToken"]
         .as_str()
         .expect("access token")
-        .to_string();
-    let verification_token = registered["verificationToken"]
-        .as_str()
-        .expect("dev verification token")
         .to_string();
 
     let (status, me) = send(app.clone(), Method::GET, "/v1/me", Some(&access), None).await;
@@ -128,15 +157,15 @@ async fn register_login_refresh_logout_flow(pool: PgPool) {
         .expect("login refresh")
         .to_string();
 
-    let (status, verified) = send(
+    let (status, reused) = send(
         app.clone(),
         Method::POST,
-        "/v1/auth/verify-email",
+        "/v1/auth/register/verify",
         None,
-        Some(json!({ "token": verification_token })),
+        Some(json!({ "email": "steve@example.com", "code": verification_token })),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{verified}");
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{reused}");
 
     let (status, me) = send(
         app.clone(),
@@ -324,11 +353,8 @@ async fn resend_verification_invalidates_previous_token(pool: PgPool) {
     let (state, _dir) = test_state(pool);
     let app = app(state);
 
-    let registered = register(&app, "resend@example.com", "resenduser", "password 123").await;
-    let access = registered["tokens"]["accessToken"]
-        .as_str()
-        .expect("access token")
-        .to_string();
+    let registered =
+        register_pending(&app, "resend@example.com", "resenduser", "password 123").await;
     let old_token = registered["verificationToken"]
         .as_str()
         .expect("verification token")
@@ -337,9 +363,9 @@ async fn resend_verification_invalidates_previous_token(pool: PgPool) {
     let (status, resent) = send(
         app.clone(),
         Method::POST,
-        "/v1/auth/verify-email/resend",
-        Some(&access),
+        "/v1/auth/register/resend",
         None,
+        Some(json!({ "email": "resend@example.com" })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{resent}");
@@ -352,9 +378,9 @@ async fn resend_verification_invalidates_previous_token(pool: PgPool) {
     let (status, _) = send(
         app.clone(),
         Method::POST,
-        "/v1/auth/verify-email",
+        "/v1/auth/register/verify",
         None,
-        Some(json!({ "token": old_token })),
+        Some(json!({ "email": "resend@example.com", "code": old_token })),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -362,19 +388,20 @@ async fn resend_verification_invalidates_previous_token(pool: PgPool) {
     let (status, verified) = send(
         app.clone(),
         Method::POST,
-        "/v1/auth/verify-email",
+        "/v1/auth/register/verify",
         None,
-        Some(json!({ "token": new_token })),
+        Some(json!({ "email": "resend@example.com", "code": new_token })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{verified}");
+    assert_eq!(verified["user"]["emailVerified"], true);
 
     let (status, again) = send(
         app,
         Method::POST,
-        "/v1/auth/verify-email/resend",
-        Some(&access),
+        "/v1/auth/register/resend",
         None,
+        Some(json!({ "email": "resend@example.com" })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{again}");
