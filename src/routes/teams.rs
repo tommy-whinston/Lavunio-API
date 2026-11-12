@@ -1,21 +1,92 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::Json;
+use serde::Deserialize;
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::auth;
 use crate::error::ApiError;
 use crate::models::{
-    SimpleStatus, Team, TeamCard, TeamInvitationItem, TeamInviteRequest, TeamJoinRequest,
-    TeamJoinRequestItem, TeamJoinResolveRequest, TeamMember, TeamMemberRoleRequest, TeamModeItem,
-    TeamNewsItem, TeamNewsRequest, TeamProfile, TeamRequest, TeamStats, TeamTransferRequest,
-    TeamVerifyRequest,
+    SimpleStatus, Team, TeamCard, TeamDirectoryItem, TeamDirectoryResponse, TeamInvitationItem,
+    TeamInviteRequest, TeamJoinRequest, TeamJoinRequestItem, TeamJoinResolveRequest, TeamMember,
+    TeamMemberRoleRequest, TeamModeItem, TeamNewsItem, TeamNewsRequest, TeamProfile, TeamRequest,
+    TeamStats, TeamTransferRequest, TeamVerifyRequest,
 };
 use crate::routes::notifications;
 use crate::AppState;
 
+#[derive(Debug, Deserialize)]
+pub struct TeamsQuery {
+    q: Option<String>,
+    sort: Option<String>,
+    filter: Option<String>,
+    offset: Option<i64>,
+    limit: Option<i64>,
+}
+
 fn valid_member_role(role: &str) -> bool {
-    matches!(role, "admin" | "publisher" | "designer" | "member")
+    matches!(
+        role,
+        "admin" | "publisher" | "designer" | "builder" | "modeler" | "member"
+    )
+}
+
+fn role_default_permissions(role: &str) -> Value {
+    match role {
+        "owner" => json!({
+            "manage_team": true,
+            "manage_members": true,
+            "manage_modes": true,
+            "manage_news": true
+        }),
+        "admin" => json!({
+            "manage_team": true,
+            "manage_members": true,
+            "manage_modes": false,
+            "manage_news": true
+        }),
+        "publisher" | "builder" | "modeler" => json!({
+            "manage_team": false,
+            "manage_members": false,
+            "manage_modes": true,
+            "manage_news": false
+        }),
+        "designer" => json!({
+            "manage_team": false,
+            "manage_members": false,
+            "manage_modes": true,
+            "manage_news": false
+        }),
+        _ => json!({}),
+    }
+}
+
+fn permission_allowed(role: &str, permissions: &Value, key: &str) -> bool {
+    if role == "owner" {
+        return true;
+    }
+    if let Some(value) = permissions.get(key).and_then(Value::as_bool) {
+        return value;
+    }
+    role_default_permissions(role)
+        .get(key)
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+async fn member_access(
+    pool: &sqlx::PgPool,
+    team_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<(String, Value)>, ApiError> {
+    Ok(sqlx::query_as::<_, (String, Value)>(
+        "SELECT role, permissions FROM team_members WHERE team_id = $1 AND user_id = $2",
+    )
+    .bind(team_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?)
 }
 
 fn validate_url(value: &Option<String>, label: &str) -> Result<Option<String>, ApiError> {
@@ -93,6 +164,77 @@ async fn team_role(
     .await?)
 }
 
+pub async fn list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<TeamsQuery>,
+) -> Result<Json<TeamDirectoryResponse>, ApiError> {
+    let user = auth::optional_user(&state.pool, &headers).await;
+    let user_id = user.as_ref().map(|value| value.id);
+    let search = query.q.unwrap_or_default().trim().to_lowercase();
+    let filter = match query.filter.as_deref().unwrap_or("all") {
+        "mine" => "mine",
+        "following" => "following",
+        _ => "all",
+    };
+    let order = match query.sort.as_deref().unwrap_or("popular") {
+        "new" => "t.created_at DESC",
+        "name" => "lower(t.title) ASC",
+        _ => "followers DESC, downloads DESC, members_count DESC, t.created_at DESC",
+    };
+    let offset = query.offset.unwrap_or(0).max(0);
+    let limit = query.limit.unwrap_or(24).clamp(1, 60);
+    let filter_sql = r#"
+        t.status = 'active'
+        AND ($1::text = '' OR lower(t.title) LIKE '%' || $1 || '%' OR lower(t.slug) LIKE '%' || $1 || '%')
+        AND (
+            $2::uuid IS NULL OR $3::text = 'all'
+            OR ($3::text = 'mine' AND EXISTS (
+                SELECT 1 FROM team_members tm WHERE tm.team_id = t.id AND tm.user_id = $2
+            ))
+            OR ($3::text = 'following' AND EXISTS (
+                SELECT 1 FROM team_followers f WHERE f.team_id = t.id AND f.user_id = $2
+            ))
+        )
+    "#;
+    let total =
+        sqlx::query_scalar::<_, i64>(&format!("SELECT COUNT(*) FROM teams t WHERE {filter_sql}"))
+            .bind(&search)
+            .bind(user_id)
+            .bind(filter)
+            .fetch_one(&state.pool)
+            .await?;
+    let sql = format!(
+        r#"
+        SELECT t.id, t.slug, t.title, t.description, t.avatar_url, t.banner_url,
+               t.verified, t.join_mode,
+               (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id) AS members_count,
+               (SELECT COUNT(*) FROM modes m WHERE m.team_id = t.id AND m.status = 'published') AS modes_count,
+               COALESCE((SELECT COUNT(*) FROM mode_events e JOIN modes m ON m.id = e.mode_id
+                         WHERE m.team_id = t.id AND e.event = 'download'), 0) AS downloads,
+               (SELECT COUNT(*) FROM team_followers f WHERE f.team_id = t.id) AS followers,
+               (SELECT tm.role FROM team_members tm WHERE tm.team_id = t.id AND tm.user_id = $2) AS role,
+               EXISTS(SELECT 1 FROM team_followers f WHERE f.team_id = t.id AND f.user_id = $2) AS following,
+               COALESCE((SELECT tm.permissions FROM team_members tm
+                         WHERE tm.team_id = t.id AND tm.user_id = $2), '{{}}'::jsonb) AS permissions,
+               t.created_at
+        FROM teams t
+        WHERE {filter_sql}
+        ORDER BY {order}
+        OFFSET $4 LIMIT $5
+        "#
+    );
+    let items = sqlx::query_as::<_, TeamDirectoryItem>(&sql)
+        .bind(&search)
+        .bind(user_id)
+        .bind(filter)
+        .bind(offset)
+        .bind(limit)
+        .fetch_all(&state.pool)
+        .await?;
+    Ok(Json(TeamDirectoryResponse { items, total }))
+}
+
 pub async fn mine(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -124,11 +266,6 @@ pub async fn create(
     Json(body): Json<TeamRequest>,
 ) -> Result<Json<Team>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
-    if !matches!(user.role.as_str(), "author" | "admin") {
-        return Err(ApiError::Forbidden(
-            "Создавать команды могут только авторы".to_string(),
-        ));
-    }
     let (slug, title, description, links) = validate_request(&body)?;
     let avatar_url = validate_url(&body.avatar_url, "Ссылка на аватар")?;
     let banner_url = validate_url(&body.banner_url, "Ссылка на баннер")?;
@@ -184,8 +321,11 @@ pub async fn update(
     Json(body): Json<TeamRequest>,
 ) -> Result<Json<Team>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
-    let role = team_role(&state.pool, team_id, user.id).await?;
-    let allowed = user.role == "admin" || matches!(role.as_deref(), Some("owner") | Some("admin"));
+    let access = member_access(&state.pool, team_id, user.id).await?;
+    let allowed = user.role == "admin"
+        || access.as_ref().is_some_and(|(role, permissions)| {
+            permission_allowed(role, permissions, "manage_team")
+        });
     if !allowed {
         return Err(ApiError::Forbidden(
             "Изменять команду могут владелец и администратор команды".to_string(),
@@ -286,11 +426,13 @@ pub async fn invite(
     if team.status != "active" {
         return Err(ApiError::BadRequest("Команда в архиве".to_string()));
     }
-    let actor_role = team_role(&state.pool, team_id, user.id).await?;
+    let access = member_access(&state.pool, team_id, user.id).await?;
     let is_platform_admin = user.role == "admin";
-    let is_owner = actor_role.as_deref() == Some("owner");
-    let is_team_admin = actor_role.as_deref() == Some("admin");
-    if !is_platform_admin && !is_owner && !is_team_admin {
+    let is_owner = access.as_ref().is_some_and(|(role, _)| role == "owner");
+    let can_invite = access
+        .as_ref()
+        .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
+    if !is_platform_admin && !can_invite {
         return Err(ApiError::Forbidden(
             "Приглашать участников могут владелец и администратор команды".to_string(),
         ));
@@ -299,7 +441,7 @@ pub async fn invite(
     let role = body.role.trim().to_lowercase();
     if !valid_member_role(&role) {
         return Err(ApiError::BadRequest(
-            "role: admin, publisher, designer или member".to_string(),
+            "role: admin, publisher, designer, builder, modeler или member".to_string(),
         ));
     }
     if role == "admin" && !is_owner && !is_platform_admin {
@@ -452,11 +594,13 @@ pub async fn set_member_role(
     Json(body): Json<TeamMemberRoleRequest>,
 ) -> Result<Json<SimpleStatus>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
-    let actor_role = team_role(&state.pool, team_id, user.id).await?;
+    let access = member_access(&state.pool, team_id, user.id).await?;
     let is_platform_admin = user.role == "admin";
-    let is_owner = actor_role.as_deref() == Some("owner");
-    let is_team_admin = actor_role.as_deref() == Some("admin");
-    if !is_platform_admin && !is_owner && !is_team_admin {
+    let is_owner = access.as_ref().is_some_and(|(role, _)| role == "owner");
+    let can_manage = access
+        .as_ref()
+        .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
+    if !is_platform_admin && !can_manage {
         return Err(ApiError::Forbidden(
             "Менять роли могут владелец и администратор команды".to_string(),
         ));
@@ -465,12 +609,18 @@ pub async fn set_member_role(
     let role = body.role.trim().to_lowercase();
     if !valid_member_role(&role) {
         return Err(ApiError::BadRequest(
-            "role: admin, publisher, designer или member".to_string(),
+            "role: admin, publisher, designer, builder, modeler или member".to_string(),
         ));
     }
     if role == "admin" && !is_owner && !is_platform_admin {
         return Err(ApiError::Forbidden(
             "Назначать администраторов может только владелец".to_string(),
+        ));
+    }
+    let permissions = body.permissions.unwrap_or_else(|| json!({}));
+    if !permissions.is_object() {
+        return Err(ApiError::BadRequest(
+            "permissions должен быть объектом".to_string(),
         ));
     }
 
@@ -488,12 +638,15 @@ pub async fn set_member_role(
         ));
     }
 
-    sqlx::query("UPDATE team_members SET role = $3 WHERE team_id = $1 AND user_id = $2")
-        .bind(team_id)
-        .bind(user_id)
-        .bind(&role)
-        .execute(&state.pool)
-        .await?;
+    sqlx::query(
+        "UPDATE team_members SET role = $3, permissions = $4 WHERE team_id = $1 AND user_id = $2",
+    )
+    .bind(team_id)
+    .bind(user_id)
+    .bind(&role)
+    .bind(&permissions)
+    .execute(&state.pool)
+    .await?;
     Ok(Json(SimpleStatus {
         ok: true,
         status: "updated".to_string(),
@@ -506,19 +659,21 @@ pub async fn remove_member(
     Path((team_id, user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<SimpleStatus>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
-    let actor_role = team_role(&state.pool, team_id, user.id).await?;
+    let access = member_access(&state.pool, team_id, user.id).await?;
     let is_platform_admin = user.role == "admin";
-    let is_owner = actor_role.as_deref() == Some("owner");
-    let is_team_admin = actor_role.as_deref() == Some("admin");
+    let is_owner = access.as_ref().is_some_and(|(role, _)| role == "owner");
+    let can_manage = access
+        .as_ref()
+        .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
     let is_self = user.id == user_id;
 
     if is_self {
-        if actor_role.as_deref() == Some("owner") {
+        if is_owner {
             return Err(ApiError::Forbidden(
                 "Владелец не может покинуть команду. Сначала передай владение".to_string(),
             ));
         }
-    } else if !is_platform_admin && !is_owner && !is_team_admin {
+    } else if !is_platform_admin && !can_manage {
         return Err(ApiError::Forbidden(
             "Удалять участников могут владелец и администратор команды".to_string(),
         ));
@@ -623,8 +778,11 @@ pub async fn join_requests(
     Path(team_id): Path<Uuid>,
 ) -> Result<Json<Vec<TeamJoinRequestItem>>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
-    let role = team_role(&state.pool, team_id, user.id).await?;
-    if user.role != "admin" && !matches!(role.as_deref(), Some("owner") | Some("admin")) {
+    let access = member_access(&state.pool, team_id, user.id).await?;
+    let can_manage = access
+        .as_ref()
+        .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
+    if user.role != "admin" && !can_manage {
         return Err(ApiError::Forbidden(
             "Заявки видят владелец и администратор команды".to_string(),
         ));
@@ -651,8 +809,11 @@ pub async fn resolve_join_request(
     Json(body): Json<TeamJoinResolveRequest>,
 ) -> Result<Json<SimpleStatus>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
-    let role = team_role(&state.pool, team_id, user.id).await?;
-    if user.role != "admin" && !matches!(role.as_deref(), Some("owner") | Some("admin")) {
+    let access = member_access(&state.pool, team_id, user.id).await?;
+    let can_manage = access
+        .as_ref()
+        .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
+    if user.role != "admin" && !can_manage {
         return Err(ApiError::Forbidden(
             "Рассматривать заявки могут владелец и администратор команды".to_string(),
         ));
@@ -802,8 +963,11 @@ pub async fn create_news(
     Json(body): Json<TeamNewsRequest>,
 ) -> Result<Json<SimpleStatus>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
-    let role = team_role(&state.pool, team_id, user.id).await?;
-    if user.role != "admin" && !matches!(role.as_deref(), Some("owner") | Some("admin")) {
+    let access = member_access(&state.pool, team_id, user.id).await?;
+    let can_manage = access
+        .as_ref()
+        .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_news"));
+    if user.role != "admin" && !can_manage {
         return Err(ApiError::Forbidden(
             "Публиковать новости могут владелец и администратор команды".to_string(),
         ));
@@ -861,6 +1025,7 @@ pub async fn admin_verify(
 
 pub async fn profile(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(slug): Path<String>,
 ) -> Result<Json<TeamProfile>, ApiError> {
     let team = sqlx::query_as::<_, Team>(
@@ -878,7 +1043,7 @@ pub async fn profile(
 
     let members = sqlx::query_as::<_, TeamMember>(
         r#"
-        SELECT tm.user_id, u.username, u.display_name, u.avatar_url, tm.role
+        SELECT tm.user_id, u.username, u.display_name, u.avatar_url, tm.role, tm.permissions
         FROM team_members tm
         JOIN users u ON u.id = tm.user_id
         WHERE tm.team_id = $1
@@ -887,7 +1052,9 @@ pub async fn profile(
             WHEN 'admin' THEN 1
             WHEN 'publisher' THEN 2
             WHEN 'designer' THEN 3
-            ELSE 4
+            WHEN 'builder' THEN 4
+            WHEN 'modeler' THEN 5
+            ELSE 6
         END, tm.created_at
         "#,
     )
@@ -943,6 +1110,24 @@ pub async fn profile(
     .fetch_all(&state.pool)
     .await?;
 
+    let viewer = auth::optional_user(&state.pool, &headers).await;
+    let (role, permissions, following) = if let Some(user) = viewer {
+        let access = member_access(&state.pool, team.id, user.id).await?;
+        let following = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM team_followers WHERE team_id = $1 AND user_id = $2)",
+        )
+        .bind(team.id)
+        .bind(user.id)
+        .fetch_one(&state.pool)
+        .await?;
+        match access {
+            Some((role, permissions)) => (Some(role), permissions, following),
+            None => (None, json!({}), following),
+        }
+    } else {
+        (None, json!({}), false)
+    };
+
     Ok(Json(TeamProfile {
         team,
         members,
@@ -955,5 +1140,8 @@ pub async fn profile(
         },
         followers,
         news,
+        role,
+        following,
+        permissions,
     }))
 }

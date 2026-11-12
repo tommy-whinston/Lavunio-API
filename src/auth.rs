@@ -211,6 +211,13 @@ pub async fn require_user(pool: &PgPool, headers: &HeaderMap) -> Result<AuthUser
     Ok(require_session(pool, headers).await?.user)
 }
 
+pub async fn optional_user(pool: &PgPool, headers: &HeaderMap) -> Option<AuthUser> {
+    if headers.get(AUTHORIZATION).is_none() {
+        return None;
+    }
+    require_user(pool, headers).await.ok()
+}
+
 pub async fn require_session(pool: &PgPool, headers: &HeaderMap) -> Result<AuthSession, ApiError> {
     let token = headers
         .get(AUTHORIZATION)

@@ -89,7 +89,7 @@ pub fn router() -> Router<AppState> {
             "/v1/me/team-invitations/{id}/decline",
             post(teams::decline_invitation),
         )
-        .route("/v1/teams", post(teams::create))
+        .route("/v1/teams", get(teams::list).post(teams::create))
         .route(
             "/v1/teams/{slug}",
             get(teams::profile)

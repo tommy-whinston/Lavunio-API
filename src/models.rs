@@ -424,6 +424,37 @@ pub struct TeamProfile {
     pub stats: TeamStats,
     pub followers: i64,
     pub news: Vec<TeamNewsItem>,
+    pub role: Option<String>,
+    pub following: bool,
+    pub permissions: Value,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamDirectoryItem {
+    pub id: Uuid,
+    pub slug: String,
+    pub title: String,
+    pub description: String,
+    pub avatar_url: Option<String>,
+    pub banner_url: Option<String>,
+    pub verified: bool,
+    pub join_mode: String,
+    pub members_count: i64,
+    pub modes_count: i64,
+    pub downloads: i64,
+    pub followers: i64,
+    pub role: Option<String>,
+    pub following: bool,
+    pub permissions: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamDirectoryResponse {
+    pub items: Vec<TeamDirectoryItem>,
+    pub total: i64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -488,6 +519,7 @@ pub struct TeamMember {
     pub display_name: String,
     pub avatar_url: Option<String>,
     pub role: String,
+    pub permissions: Value,
 }
 
 #[derive(Debug, Clone, Serialize, FromRow)]
@@ -654,6 +686,8 @@ pub struct TeamInviteRequest {
 pub struct TeamMemberRoleRequest {
     #[serde(default)]
     pub role: String,
+    #[serde(default)]
+    pub permissions: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, FromRow)]
