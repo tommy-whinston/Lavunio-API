@@ -1,16 +1,24 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::Json;
 use chrono::{DateTime, Utc};
+use serde::Deserialize;
 use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::auth;
 use crate::error::ApiError;
 use crate::models::{
-    PlayerModeItem, PlayerProfile, PlayerStats, PlayerTeamItem, SimpleStatus, UpdateProfileRequest,
+    CreateProfilePostRequest, PlayerModeItem, PlayerProfile, PlayerStats, PlayerTeamItem,
+    ProfilePostItem, ProfilePostsResponse, SimpleStatus, UpdateProfileRequest,
 };
 use crate::AppState;
+
+#[derive(Debug, Deserialize)]
+pub struct PostsQuery {
+    offset: Option<i64>,
+    limit: Option<i64>,
+}
 
 #[derive(Debug, FromRow)]
 struct ProfileRow {
@@ -164,5 +172,105 @@ pub async fn update_profile(
     Ok(Json(SimpleStatus {
         ok: true,
         status: "updated".to_string(),
+    }))
+}
+
+async fn fetch_profile_post(pool: &sqlx::PgPool, id: Uuid) -> Result<ProfilePostItem, ApiError> {
+    sqlx::query_as::<_, ProfilePostItem>(
+        r#"
+        SELECT p.id, p.body, p.created_at,
+               u.username, u.display_name, u.avatar_url, u.skin_url, u.skin_model
+        FROM profile_posts p
+        JOIN users u ON u.id = p.user_id
+        WHERE p.id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("Пост не найден".to_string()))
+}
+
+pub async fn posts(
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+    Query(query): Query<PostsQuery>,
+) -> Result<Json<ProfilePostsResponse>, ApiError> {
+    let user_id =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE lower(username) = lower($1)")
+            .bind(username.trim())
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("Игрок не найден".to_string()))?;
+    let offset = query.offset.unwrap_or(0).max(0);
+    let limit = query.limit.unwrap_or(20).clamp(1, 50);
+    let total =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM profile_posts WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(&state.pool)
+            .await?;
+    let items = sqlx::query_as::<_, ProfilePostItem>(
+        r#"
+        SELECT p.id, p.body, p.created_at,
+               u.username, u.display_name, u.avatar_url, u.skin_url, u.skin_model
+        FROM profile_posts p
+        JOIN users u ON u.id = p.user_id
+        WHERE p.user_id = $1
+        ORDER BY p.created_at DESC
+        OFFSET $2 LIMIT $3
+        "#,
+    )
+    .bind(user_id)
+    .bind(offset)
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(ProfilePostsResponse {
+        items,
+        total,
+        offset,
+        limit,
+    }))
+}
+
+pub async fn create_post(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CreateProfilePostRequest>,
+) -> Result<Json<ProfilePostItem>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let text = body.body.trim();
+    if text.is_empty() || text.chars().count() > 1000 {
+        return Err(ApiError::BadRequest(
+            "Пост: от 1 до 1000 символов".to_string(),
+        ));
+    }
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO profile_posts (id, user_id, body) VALUES ($1, $2, $3)")
+        .bind(id)
+        .bind(user.id)
+        .bind(text)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(fetch_profile_post(&state.pool, id).await?))
+}
+
+pub async fn delete_post(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let result = sqlx::query("DELETE FROM profile_posts WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user.id)
+        .execute(&state.pool)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(ApiError::NotFound("Пост не найден".to_string()));
+    }
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "deleted".to_string(),
     }))
 }

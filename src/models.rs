@@ -1026,6 +1026,34 @@ pub struct ResendRegistrationRequest {
     pub email: String,
 }
 
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfilePostItem {
+    pub id: Uuid,
+    pub body: String,
+    pub created_at: DateTime<Utc>,
+    pub username: String,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub skin_url: Option<String>,
+    pub skin_model: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfilePostsResponse {
+    pub items: Vec<ProfilePostItem>,
+    pub total: i64,
+    pub offset: i64,
+    pub limit: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateProfilePostRequest {
+    pub body: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginChallengeResponse {

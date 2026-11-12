@@ -53,6 +53,9 @@ pub fn router() -> Router<AppState> {
         .route("/v1/me/teams", get(teams::mine))
         .route("/v1/me/profile", put(players::update_profile))
         .route("/v1/users/{username}", get(players::profile))
+        .route("/v1/users/{username}/posts", get(players::posts))
+        .route("/v1/me/posts", post(players::create_post))
+        .route("/v1/me/posts/{id}", delete(players::delete_post))
         .route("/v1/me/presence", post(friends::heartbeat))
         .route("/v1/me/friends", get(friends::list))
         .route(
