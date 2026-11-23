@@ -56,8 +56,8 @@ fn role_default_permissions(role: &str) -> Value {
     }
 }
 
-fn permission_allowed(role: &str, permissions: &Value, key: &str) -> bool {
-    if role == "owner" {
+fn permission_allowed(role: &str, is_owner: bool, permissions: &Value, key: &str) -> bool {
+    if is_owner || role == "owner" {
         return true;
     }
     if let Some(value) = permissions.get(key).and_then(Value::as_bool) {
@@ -73,11 +73,14 @@ async fn member_access(
     pool: &sqlx::PgPool,
     team_id: Uuid,
     user_id: Uuid,
-) -> Result<Option<(String, Value)>, ApiError> {
-    Ok(sqlx::query_as::<_, (String, Value)>(
+) -> Result<Option<(String, Value, bool)>, ApiError> {
+    Ok(sqlx::query_as::<_, (String, Value, bool)>(
         r#"
-        SELECT m.role, COALESCE(r.permissions, '{}'::jsonb) || COALESCE(m.permissions, '{}'::jsonb)
+        SELECT m.role,
+               COALESCE(r.permissions, '{}'::jsonb) || COALESCE(m.permissions, '{}'::jsonb),
+               (t.owner_id = m.user_id)
         FROM team_members m
+        JOIN teams t ON t.id = m.team_id
         LEFT JOIN team_roles r ON r.team_id = m.team_id AND r.name = m.role
         WHERE m.team_id = $1 AND m.user_id = $2
         "#,
@@ -333,8 +336,8 @@ pub async fn update(
     let user = auth::require_user(&state.pool, &headers).await?;
     let access = member_access(&state.pool, team_id, user.id).await?;
     let allowed = user.role == "admin"
-        || access.as_ref().is_some_and(|(role, permissions)| {
-            permission_allowed(role, permissions, "manage_team")
+        || access.as_ref().is_some_and(|(role, permissions, is_owner)| {
+            permission_allowed(role, *is_owner, permissions, "manage_team")
         });
     if !allowed {
         return Err(ApiError::Forbidden(
@@ -438,10 +441,10 @@ pub async fn invite(
     }
     let access = member_access(&state.pool, team_id, user.id).await?;
     let is_platform_admin = user.role == "admin";
-    let is_owner = access.as_ref().is_some_and(|(role, _)| role == "owner");
+    let is_owner = access.as_ref().is_some_and(|(_, _, is_owner)| *is_owner);
     let can_invite = access
         .as_ref()
-        .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
+        .is_some_and(|(role, permissions, is_owner)| permission_allowed(role, *is_owner, permissions, "manage_members"));
     if !is_platform_admin && !can_invite {
         return Err(ApiError::Forbidden(
             "РџСЂРёРіР»Р°С€Р°С‚СЊ СѓС‡Р°СЃС‚РЅРёРєРѕРІ РјРѕРіСѓС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string(),
@@ -606,10 +609,10 @@ pub async fn set_member_role(
     let user = auth::require_user(&state.pool, &headers).await?;
     let access = member_access(&state.pool, team_id, user.id).await?;
     let is_platform_admin = user.role == "admin";
-    let is_owner = access.as_ref().is_some_and(|(role, _)| role == "owner");
+    let is_owner = access.as_ref().is_some_and(|(_, _, is_owner)| *is_owner);
     let can_manage = access
         .as_ref()
-        .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
+        .is_some_and(|(role, permissions, is_owner)| permission_allowed(role, *is_owner, permissions, "manage_members"));
     if !is_platform_admin && !can_manage {
         return Err(ApiError::Forbidden(
             "РњРµРЅСЏС‚СЊ СЂРѕР»Рё РјРѕРіСѓС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string(),
@@ -671,10 +674,10 @@ pub async fn remove_member(
     let user = auth::require_user(&state.pool, &headers).await?;
     let access = member_access(&state.pool, team_id, user.id).await?;
     let is_platform_admin = user.role == "admin";
-    let is_owner = access.as_ref().is_some_and(|(role, _)| role == "owner");
+    let is_owner = access.as_ref().is_some_and(|(_, _, is_owner)| *is_owner);
     let can_manage = access
         .as_ref()
-        .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
+        .is_some_and(|(role, permissions, is_owner)| permission_allowed(role, *is_owner, permissions, "manage_members"));
     let is_self = user.id == user_id;
 
     if is_self {
@@ -791,7 +794,7 @@ pub async fn join_requests(
     let access = member_access(&state.pool, team_id, user.id).await?;
     let can_manage = access
         .as_ref()
-        .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
+        .is_some_and(|(role, permissions, is_owner)| permission_allowed(role, *is_owner, permissions, "manage_members"));
     if user.role != "admin" && !can_manage {
         return Err(ApiError::Forbidden(
             "Р—Р°СЏРІРєРё РІРёРґСЏС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string(),
@@ -822,7 +825,7 @@ pub async fn resolve_join_request(
     let access = member_access(&state.pool, team_id, user.id).await?;
     let can_manage = access
         .as_ref()
-        .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
+        .is_some_and(|(role, permissions, is_owner)| permission_allowed(role, *is_owner, permissions, "manage_members"));
     if user.role != "admin" && !can_manage {
         return Err(ApiError::Forbidden(
             "Р Р°СЃСЃРјР°С‚СЂРёРІР°С‚СЊ Р·Р°СЏРІРєРё РјРѕРіСѓС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string(),
@@ -976,7 +979,7 @@ pub async fn create_news(
     let access = member_access(&state.pool, team_id, user.id).await?;
     let can_manage = access
         .as_ref()
-        .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_news"));
+        .is_some_and(|(role, permissions, is_owner)| permission_allowed(role, *is_owner, permissions, "manage_news"));
     if user.role != "admin" && !can_manage {
         return Err(ApiError::Forbidden(
             "РџСѓР±Р»РёРєРѕРІР°С‚СЊ РЅРѕРІРѕСЃС‚Рё РјРѕРіСѓС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string(),
@@ -1131,7 +1134,7 @@ pub async fn profile(
         .fetch_one(&state.pool)
         .await?;
         match access {
-            Some((role, permissions)) => (Some(role), permissions, following),
+            Some((role, permissions, _)) => (Some(role), permissions, following),
             None => (None, json!({}), following),
         }
     } else {
@@ -1174,9 +1177,6 @@ fn validate_role(body: &TeamRoleRequest) -> Result<(String, Value), ApiError> {
     if name.is_empty() || name.chars().count() > 32 {
         return Err(ApiError::BadRequest("РќР°Р·РІР°РЅРёРµ СЂРѕР»Рё: РѕС‚ 1 РґРѕ 32 СЃРёРјРІРѕР»РѕРІ".to_string()));
     }
-    if name == "owner" {
-        return Err(ApiError::BadRequest("Р РѕР»СЊ РІР»Р°РґРµР»СЊС†Р° РјРµРЅСЏС‚СЊ РЅРµР»СЊР·СЏ".to_string()));
-    }
     let raw = body.permissions.clone().unwrap_or_else(|| json!({}));
     let mut clean = serde_json::Map::new();
     for key in ["manage_team", "manage_members", "manage_modes", "manage_news"] {
@@ -1189,7 +1189,7 @@ async fn require_manage_team(state: &AppState, headers: &HeaderMap, team_id: Uui
     let user = auth::require_user(&state.pool, headers).await?;
     let access = member_access(&state.pool, team_id, user.id).await?;
     let allowed = user.role == "admin"
-        || access.as_ref().is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_team"));
+        || access.as_ref().is_some_and(|(role, permissions, is_owner)| permission_allowed(role, *is_owner, permissions, "manage_team"));
     if !allowed {
         return Err(ApiError::Forbidden("РњРµРЅСЏС‚СЊ СЂРѕР»Рё РјРѕР¶РµС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string()));
     }
@@ -1304,7 +1304,7 @@ pub async fn delete_role(
 ) -> Result<Json<SimpleStatus>, ApiError> {
     require_manage_team(&state, &headers, team_id).await?;
     let current = find_role(&state, team_id, role_id).await?;
-    if current.name == "owner" || current.is_default {
+    if current.is_default {
         return Err(ApiError::BadRequest("Р­С‚Сѓ СЂРѕР»СЊ СѓРґР°Р»РёС‚СЊ РЅРµР»СЊР·СЏ".to_string()));
     }
     let used = sqlx::query_scalar::<_, i64>(
