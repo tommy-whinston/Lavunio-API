@@ -1,3 +1,4 @@
+﻿use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::Json;
@@ -104,11 +105,11 @@ fn validate_url(value: &Option<String>, label: &str) -> Result<Option<String>, A
     };
     if !raw.starts_with("http://") && !raw.starts_with("https://") {
         return Err(ApiError::BadRequest(format!(
-            "{label} должна начинаться с http:// или https://"
+            "{label} РґРѕР»Р¶РЅР° РЅР°С‡РёРЅР°С‚СЊСЃСЏ СЃ http:// РёР»Рё https://"
         )));
     }
     if raw.chars().count() > 500 {
-        return Err(ApiError::BadRequest(format!("{label} слишком длинная")));
+        return Err(ApiError::BadRequest(format!("{label} СЃР»РёС€РєРѕРј РґР»РёРЅРЅР°СЏ")));
     }
     Ok(Some(raw.to_string()))
 }
@@ -117,24 +118,24 @@ fn validate_request(body: &TeamRequest) -> Result<(String, String, String, Strin
     let slug = body.slug.trim().to_lowercase();
     if !super::validate_slug(&slug) {
         return Err(ApiError::BadRequest(
-            "slug: только строчные латинские буквы, цифры и дефис".to_string(),
+            "slug: С‚РѕР»СЊРєРѕ СЃС‚СЂРѕС‡РЅС‹Рµ Р»Р°С‚РёРЅСЃРєРёРµ Р±СѓРєРІС‹, С†РёС„СЂС‹ Рё РґРµС„РёСЃ".to_string(),
         ));
     }
     let title = body.title.trim();
     if title.is_empty() || title.chars().count() > 100 {
         return Err(ApiError::BadRequest(
-            "Название команды: от 1 до 100 символов".to_string(),
+            "РќР°Р·РІР°РЅРёРµ РєРѕРјР°РЅРґС‹: РѕС‚ 1 РґРѕ 100 СЃРёРјРІРѕР»РѕРІ".to_string(),
         ));
     }
     let description = body.description.trim();
     if description.chars().count() > 5000 {
         return Err(ApiError::BadRequest(
-            "Описание команды слишком длинное".to_string(),
+            "РћРїРёСЃР°РЅРёРµ РєРѕРјР°РЅРґС‹ СЃР»РёС€РєРѕРј РґР»РёРЅРЅРѕРµ".to_string(),
         ));
     }
     let links = body.links.trim();
     if links.chars().count() > 1000 {
-        return Err(ApiError::BadRequest("Ссылки слишком длинные".to_string()));
+        return Err(ApiError::BadRequest("РЎСЃС‹Р»РєРё СЃР»РёС€РєРѕРј РґР»РёРЅРЅС‹Рµ".to_string()));
     }
     Ok((
         slug,
@@ -156,7 +157,7 @@ async fn fetch_team(pool: &sqlx::PgPool, team_id: Uuid) -> Result<Team, ApiError
     .bind(team_id)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| ApiError::NotFound("Команда не найдена".to_string()))
+    .ok_or_else(|| ApiError::NotFound("РљРѕРјР°РЅРґР° РЅРµ РЅР°Р№РґРµРЅР°".to_string()))
 }
 
 async fn team_role(
@@ -276,12 +277,12 @@ pub async fn create(
 ) -> Result<Json<Team>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
     let (slug, title, description, links) = validate_request(&body)?;
-    let avatar_url = validate_url(&body.avatar_url, "Ссылка на аватар")?;
-    let banner_url = validate_url(&body.banner_url, "Ссылка на баннер")?;
+    let avatar_url = validate_url(&body.avatar_url, "РЎСЃС‹Р»РєР° РЅР° Р°РІР°С‚Р°СЂ")?;
+    let banner_url = validate_url(&body.banner_url, "РЎСЃС‹Р»РєР° РЅР° Р±Р°РЅРЅРµСЂ")?;
     let join_mode = body.join_mode.as_deref().unwrap_or("invite").trim();
     if !matches!(join_mode, "invite" | "request" | "open") {
         return Err(ApiError::BadRequest(
-            "joinMode: invite, request или open".to_string(),
+            "joinMode: invite, request РёР»Рё open".to_string(),
         ));
     }
 
@@ -307,7 +308,7 @@ pub async fn create(
     .await
     .map_err(|error| match error {
         sqlx::Error::Database(db) if db.code().as_deref() == Some("23505") => {
-            ApiError::Conflict("Команда с таким slug уже существует".to_string())
+            ApiError::Conflict("РљРѕРјР°РЅРґР° СЃ С‚Р°РєРёРј slug СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚".to_string())
         }
         other => ApiError::from(other),
     })?;
@@ -337,16 +338,16 @@ pub async fn update(
         });
     if !allowed {
         return Err(ApiError::Forbidden(
-            "Изменять команду могут владелец и администратор команды".to_string(),
+            "РР·РјРµРЅСЏС‚СЊ РєРѕРјР°РЅРґСѓ РјРѕРіСѓС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string(),
         ));
     }
     let (slug, title, description, links) = validate_request(&body)?;
-    let avatar_url = validate_url(&body.avatar_url, "Ссылка на аватар")?;
-    let banner_url = validate_url(&body.banner_url, "Ссылка на баннер")?;
+    let avatar_url = validate_url(&body.avatar_url, "РЎСЃС‹Р»РєР° РЅР° Р°РІР°С‚Р°СЂ")?;
+    let banner_url = validate_url(&body.banner_url, "РЎСЃС‹Р»РєР° РЅР° Р±Р°РЅРЅРµСЂ")?;
     let join_mode = body.join_mode.as_deref().unwrap_or("invite").trim();
     if !matches!(join_mode, "invite" | "request" | "open") {
         return Err(ApiError::BadRequest(
-            "joinMode: invite, request или open".to_string(),
+            "joinMode: invite, request РёР»Рё open".to_string(),
         ));
     }
 
@@ -370,7 +371,7 @@ pub async fn update(
     .await
     .map_err(|error| match error {
         sqlx::Error::Database(db) if db.code().as_deref() == Some("23505") => {
-            ApiError::Conflict("Команда с таким slug уже существует".to_string())
+            ApiError::Conflict("РљРѕРјР°РЅРґР° СЃ С‚Р°РєРёРј slug СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚".to_string())
         }
         other => ApiError::from(other),
     })?;
@@ -390,7 +391,7 @@ pub async fn archive(
     let allowed = user.role == "admin" || role.as_deref() == Some("owner");
     if !allowed {
         return Err(ApiError::Forbidden(
-            "Архивировать команду может только владелец".to_string(),
+            "РђСЂС…РёРІРёСЂРѕРІР°С‚СЊ РєРѕРјР°РЅРґСѓ РјРѕР¶РµС‚ С‚РѕР»СЊРєРѕ РІР»Р°РґРµР»РµС†".to_string(),
         ));
     }
     sqlx::query("UPDATE teams SET status = 'archived', updated_at = now() WHERE id = $1")
@@ -433,7 +434,7 @@ pub async fn invite(
     let user = auth::require_user(&state.pool, &headers).await?;
     let team = fetch_team(&state.pool, team_id).await?;
     if team.status != "active" {
-        return Err(ApiError::BadRequest("Команда в архиве".to_string()));
+        return Err(ApiError::BadRequest("РљРѕРјР°РЅРґР° РІ Р°СЂС…РёРІРµ".to_string()));
     }
     let access = member_access(&state.pool, team_id, user.id).await?;
     let is_platform_admin = user.role == "admin";
@@ -443,19 +444,19 @@ pub async fn invite(
         .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
     if !is_platform_admin && !can_invite {
         return Err(ApiError::Forbidden(
-            "Приглашать участников могут владелец и администратор команды".to_string(),
+            "РџСЂРёРіР»Р°С€Р°С‚СЊ СѓС‡Р°СЃС‚РЅРёРєРѕРІ РјРѕРіСѓС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string(),
         ));
     }
 
     let role = body.role.trim().to_lowercase();
     if !role_exists(&state.pool, team_id, &role).await? {
         return Err(ApiError::BadRequest(
-            "Неизвестная роль команды".to_string(),
+            "РќРµРёР·РІРµСЃС‚РЅР°СЏ СЂРѕР»СЊ РєРѕРјР°РЅРґС‹".to_string(),
         ));
     }
     if role == "admin" && !is_owner && !is_platform_admin {
         return Err(ApiError::Forbidden(
-            "Назначать администраторов может только владелец".to_string(),
+            "РќР°Р·РЅР°С‡Р°С‚СЊ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРІ РјРѕР¶РµС‚ С‚РѕР»СЊРєРѕ РІР»Р°РґРµР»РµС†".to_string(),
         ));
     }
 
@@ -465,10 +466,10 @@ pub async fn invite(
     .bind(body.username.trim())
     .fetch_optional(&state.pool)
     .await?
-    .ok_or_else(|| ApiError::NotFound("Пользователь не найден".to_string()))?;
+    .ok_or_else(|| ApiError::NotFound("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ".to_string()))?;
     if invitee.0 == user.id {
         return Err(ApiError::BadRequest(
-            "Нельзя пригласить самого себя".to_string(),
+            "РќРµР»СЊР·СЏ РїСЂРёРіР»Р°СЃРёС‚СЊ СЃР°РјРѕРіРѕ СЃРµР±СЏ".to_string(),
         ));
     }
 
@@ -481,7 +482,7 @@ pub async fn invite(
     .await?;
     if member {
         return Err(ApiError::Conflict(
-            "Пользователь уже состоит в команде".to_string(),
+            "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СѓР¶Рµ СЃРѕСЃС‚РѕРёС‚ РІ РєРѕРјР°РЅРґРµ".to_string(),
         ));
     }
 
@@ -500,7 +501,7 @@ pub async fn invite(
     .await
     .map_err(|error| match error {
         sqlx::Error::Database(db) if db.code().as_deref() == Some("23505") => {
-            ApiError::Conflict("Приглашение уже отправлено".to_string())
+            ApiError::Conflict("РџСЂРёРіР»Р°С€РµРЅРёРµ СѓР¶Рµ РѕС‚РїСЂР°РІР»РµРЅРѕ".to_string())
         }
         other => ApiError::from(other),
     })?;
@@ -515,9 +516,9 @@ pub async fn invite(
         &state.pool,
         invitee.0,
         "team_invite",
-        "Приглашение в команду",
+        "РџСЂРёРіР»Р°С€РµРЅРёРµ РІ РєРѕРјР°РЅРґСѓ",
         &format!(
-            "{} приглашает тебя в команду «{}»",
+            "{} РїСЂРёРіР»Р°С€Р°РµС‚ С‚РµР±СЏ РІ РєРѕРјР°РЅРґСѓ В«{}В»",
             user.display_name, team.title
         ),
         Some("team"),
@@ -540,14 +541,14 @@ pub async fn accept_invitation(
     .bind(invitation_id)
     .fetch_optional(&mut *tx)
     .await?
-    .ok_or_else(|| ApiError::NotFound("Приглашение не найдено".to_string()))?;
+    .ok_or_else(|| ApiError::NotFound("РџСЂРёРіР»Р°С€РµРЅРёРµ РЅРµ РЅР°Р№РґРµРЅРѕ".to_string()))?;
     if invitation.1 != user.id {
         return Err(ApiError::Forbidden(
-            "Это приглашение адресовано другому пользователю".to_string(),
+            "Р­С‚Рѕ РїСЂРёРіР»Р°С€РµРЅРёРµ Р°РґСЂРµСЃРѕРІР°РЅРѕ РґСЂСѓРіРѕРјСѓ РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ".to_string(),
         ));
     }
     if invitation.3 != "pending" {
-        return Err(ApiError::Conflict("Приглашение уже обработано".to_string()));
+        return Err(ApiError::Conflict("РџСЂРёРіР»Р°С€РµРЅРёРµ СѓР¶Рµ РѕР±СЂР°Р±РѕС‚Р°РЅРѕ".to_string()));
     }
     sqlx::query(
         "INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
@@ -587,7 +588,7 @@ pub async fn decline_invitation(
     .rows_affected();
     if updated == 0 {
         return Err(ApiError::NotFound(
-            "Приглашение не найдено или уже обработано".to_string(),
+            "РџСЂРёРіР»Р°С€РµРЅРёРµ РЅРµ РЅР°Р№РґРµРЅРѕ РёР»Рё СѓР¶Рµ РѕР±СЂР°Р±РѕС‚Р°РЅРѕ".to_string(),
         ));
     }
     Ok(Json(SimpleStatus {
@@ -611,39 +612,39 @@ pub async fn set_member_role(
         .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
     if !is_platform_admin && !can_manage {
         return Err(ApiError::Forbidden(
-            "Менять роли могут владелец и администратор команды".to_string(),
+            "РњРµРЅСЏС‚СЊ СЂРѕР»Рё РјРѕРіСѓС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string(),
         ));
     }
 
     let role = body.role.trim().to_lowercase();
     if !role_exists(&state.pool, team_id, &role).await? {
         return Err(ApiError::BadRequest(
-            "Неизвестная роль команды".to_string(),
+            "РќРµРёР·РІРµСЃС‚РЅР°СЏ СЂРѕР»СЊ РєРѕРјР°РЅРґС‹".to_string(),
         ));
     }
     if role == "admin" && !is_owner && !is_platform_admin {
         return Err(ApiError::Forbidden(
-            "Назначать администраторов может только владелец".to_string(),
+            "РќР°Р·РЅР°С‡Р°С‚СЊ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРІ РјРѕР¶РµС‚ С‚РѕР»СЊРєРѕ РІР»Р°РґРµР»РµС†".to_string(),
         ));
     }
     let permissions = body.permissions.unwrap_or_else(|| json!({}));
     if !permissions.is_object() {
         return Err(ApiError::BadRequest(
-            "permissions должен быть объектом".to_string(),
+            "permissions РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РѕР±СЉРµРєС‚РѕРј".to_string(),
         ));
     }
 
     let target_role = team_role(&state.pool, team_id, user_id)
         .await?
-        .ok_or_else(|| ApiError::NotFound("Участник не найден".to_string()))?;
+        .ok_or_else(|| ApiError::NotFound("РЈС‡Р°СЃС‚РЅРёРє РЅРµ РЅР°Р№РґРµРЅ".to_string()))?;
     if target_role == "owner" {
         return Err(ApiError::Forbidden(
-            "Роль владельца нельзя изменить".to_string(),
+            "Р РѕР»СЊ РІР»Р°РґРµР»СЊС†Р° РЅРµР»СЊР·СЏ РёР·РјРµРЅРёС‚СЊ".to_string(),
         ));
     }
     if target_role == "admin" && !is_owner && !is_platform_admin {
         return Err(ApiError::Forbidden(
-            "Администратор не может менять другого администратора".to_string(),
+            "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РЅРµ РјРѕР¶РµС‚ РјРµРЅСЏС‚СЊ РґСЂСѓРіРѕРіРѕ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°".to_string(),
         ));
     }
 
@@ -679,26 +680,26 @@ pub async fn remove_member(
     if is_self {
         if is_owner {
             return Err(ApiError::Forbidden(
-                "Владелец не может покинуть команду. Сначала передай владение".to_string(),
+                "Р’Р»Р°РґРµР»РµС† РЅРµ РјРѕР¶РµС‚ РїРѕРєРёРЅСѓС‚СЊ РєРѕРјР°РЅРґСѓ. РЎРЅР°С‡Р°Р»Р° РїРµСЂРµРґР°Р№ РІР»Р°РґРµРЅРёРµ".to_string(),
             ));
         }
     } else if !is_platform_admin && !can_manage {
         return Err(ApiError::Forbidden(
-            "Удалять участников могут владелец и администратор команды".to_string(),
+            "РЈРґР°Р»СЏС‚СЊ СѓС‡Р°СЃС‚РЅРёРєРѕРІ РјРѕРіСѓС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string(),
         ));
     }
 
     let target_role = team_role(&state.pool, team_id, user_id)
         .await?
-        .ok_or_else(|| ApiError::NotFound("Участник не найден".to_string()))?;
+        .ok_or_else(|| ApiError::NotFound("РЈС‡Р°СЃС‚РЅРёРє РЅРµ РЅР°Р№РґРµРЅ".to_string()))?;
     if target_role == "owner" {
         return Err(ApiError::Forbidden(
-            "Владельца нельзя удалить из команды".to_string(),
+            "Р’Р»Р°РґРµР»СЊС†Р° РЅРµР»СЊР·СЏ СѓРґР°Р»РёС‚СЊ РёР· РєРѕРјР°РЅРґС‹".to_string(),
         ));
     }
     if target_role == "admin" && !is_self && !is_owner && !is_platform_admin {
         return Err(ApiError::Forbidden(
-            "Администратор не может удалить другого администратора".to_string(),
+            "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РЅРµ РјРѕР¶РµС‚ СѓРґР°Р»РёС‚СЊ РґСЂСѓРіРѕРіРѕ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°".to_string(),
         ));
     }
 
@@ -722,11 +723,11 @@ pub async fn request_join(
     let user = auth::require_user(&state.pool, &headers).await?;
     let team = fetch_team(&state.pool, team_id).await?;
     if team.status != "active" {
-        return Err(ApiError::BadRequest("Команда в архиве".to_string()));
+        return Err(ApiError::BadRequest("РљРѕРјР°РЅРґР° РІ Р°СЂС…РёРІРµ".to_string()));
     }
     if team.join_mode == "invite" {
         return Err(ApiError::Forbidden(
-            "Команда принимает только по приглашениям".to_string(),
+            "РљРѕРјР°РЅРґР° РїСЂРёРЅРёРјР°РµС‚ С‚РѕР»СЊРєРѕ РїРѕ РїСЂРёРіР»Р°С€РµРЅРёСЏРј".to_string(),
         ));
     }
     let member = sqlx::query_scalar::<_, bool>(
@@ -737,7 +738,7 @@ pub async fn request_join(
     .fetch_one(&state.pool)
     .await?;
     if member {
-        return Err(ApiError::Conflict("Ты уже состоишь в команде".to_string()));
+        return Err(ApiError::Conflict("РўС‹ СѓР¶Рµ СЃРѕСЃС‚РѕРёС€СЊ РІ РєРѕРјР°РЅРґРµ".to_string()));
     }
 
     if team.join_mode == "open" {
@@ -757,7 +758,7 @@ pub async fn request_join(
     let message = body.message.trim();
     if message.chars().count() > 1000 {
         return Err(ApiError::BadRequest(
-            "Сообщение слишком длинное".to_string(),
+            "РЎРѕРѕР±С‰РµРЅРёРµ СЃР»РёС€РєРѕРј РґР»РёРЅРЅРѕРµ".to_string(),
         ));
     }
     sqlx::query(
@@ -771,7 +772,7 @@ pub async fn request_join(
     .await
     .map_err(|error| match error {
         sqlx::Error::Database(db) if db.code().as_deref() == Some("23505") => {
-            ApiError::Conflict("Заявка уже отправлена".to_string())
+            ApiError::Conflict("Р—Р°СЏРІРєР° СѓР¶Рµ РѕС‚РїСЂР°РІР»РµРЅР°".to_string())
         }
         other => ApiError::from(other),
     })?;
@@ -793,7 +794,7 @@ pub async fn join_requests(
         .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
     if user.role != "admin" && !can_manage {
         return Err(ApiError::Forbidden(
-            "Заявки видят владелец и администратор команды".to_string(),
+            "Р—Р°СЏРІРєРё РІРёРґСЏС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string(),
         ));
     }
     let items = sqlx::query_as::<_, TeamJoinRequestItem>(
@@ -824,7 +825,7 @@ pub async fn resolve_join_request(
         .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_members"));
     if user.role != "admin" && !can_manage {
         return Err(ApiError::Forbidden(
-            "Рассматривать заявки могут владелец и администратор команды".to_string(),
+            "Р Р°СЃСЃРјР°С‚СЂРёРІР°С‚СЊ Р·Р°СЏРІРєРё РјРѕРіСѓС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string(),
         ));
     }
     let accept = body.action.trim() == "accept";
@@ -836,9 +837,9 @@ pub async fn resolve_join_request(
     .bind(team_id)
     .fetch_optional(&mut *tx)
     .await?
-    .ok_or_else(|| ApiError::NotFound("Заявка не найдена".to_string()))?;
+    .ok_or_else(|| ApiError::NotFound("Р—Р°СЏРІРєР° РЅРµ РЅР°Р№РґРµРЅР°".to_string()))?;
     if row.1 != "pending" {
-        return Err(ApiError::Conflict("Заявка уже рассмотрена".to_string()));
+        return Err(ApiError::Conflict("Р—Р°СЏРІРєР° СѓР¶Рµ СЂР°СЃСЃРјРѕС‚СЂРµРЅР°".to_string()));
     }
     if accept {
         sqlx::query(
@@ -874,7 +875,7 @@ pub async fn transfer(
     let role = team_role(&state.pool, team_id, user.id).await?;
     if role.as_deref() != Some("owner") {
         return Err(ApiError::Forbidden(
-            "Передать владение может только владелец".to_string(),
+            "РџРµСЂРµРґР°С‚СЊ РІР»Р°РґРµРЅРёРµ РјРѕР¶РµС‚ С‚РѕР»СЊРєРѕ РІР»Р°РґРµР»РµС†".to_string(),
         ));
     }
     let target = sqlx::query_as::<_, (Uuid, String)>(
@@ -883,16 +884,16 @@ pub async fn transfer(
     .bind(body.username.trim())
     .fetch_optional(&state.pool)
     .await?
-    .ok_or_else(|| ApiError::NotFound("Пользователь не найден".to_string()))?;
+    .ok_or_else(|| ApiError::NotFound("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ".to_string()))?;
     if target.0 == user.id {
-        return Err(ApiError::BadRequest("Ты уже владелец команды".to_string()));
+        return Err(ApiError::BadRequest("РўС‹ СѓР¶Рµ РІР»Р°РґРµР»РµС† РєРѕРјР°РЅРґС‹".to_string()));
     }
     let target_role = team_role(&state.pool, team_id, target.0)
         .await?
-        .ok_or_else(|| ApiError::BadRequest("Пользователь не состоит в команде".to_string()))?;
+        .ok_or_else(|| ApiError::BadRequest("РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ СЃРѕСЃС‚РѕРёС‚ РІ РєРѕРјР°РЅРґРµ".to_string()))?;
     if target_role == "owner" {
         return Err(ApiError::BadRequest(
-            "Пользователь уже владелец".to_string(),
+            "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СѓР¶Рµ РІР»Р°РґРµР»РµС†".to_string(),
         ));
     }
 
@@ -933,7 +934,7 @@ pub async fn follow(
     let user = auth::require_user(&state.pool, &headers).await?;
     let team = fetch_team(&state.pool, team_id).await?;
     if team.status != "active" {
-        return Err(ApiError::BadRequest("Команда в архиве".to_string()));
+        return Err(ApiError::BadRequest("РљРѕРјР°РЅРґР° РІ Р°СЂС…РёРІРµ".to_string()));
     }
     sqlx::query(
         "INSERT INTO team_followers (team_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
@@ -978,19 +979,19 @@ pub async fn create_news(
         .is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_news"));
     if user.role != "admin" && !can_manage {
         return Err(ApiError::Forbidden(
-            "Публиковать новости могут владелец и администратор команды".to_string(),
+            "РџСѓР±Р»РёРєРѕРІР°С‚СЊ РЅРѕРІРѕСЃС‚Рё РјРѕРіСѓС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string(),
         ));
     }
     let title = body.title.trim();
     let text = body.body.trim();
     if !(3..=120).contains(&title.chars().count()) {
         return Err(ApiError::BadRequest(
-            "Заголовок новости: от 3 до 120 символов".to_string(),
+            "Р—Р°РіРѕР»РѕРІРѕРє РЅРѕРІРѕСЃС‚Рё: РѕС‚ 3 РґРѕ 120 СЃРёРјРІРѕР»РѕРІ".to_string(),
         ));
     }
     if !(3..=5000).contains(&text.chars().count()) {
         return Err(ApiError::BadRequest(
-            "Текст новости: от 3 до 5000 символов".to_string(),
+            "РўРµРєСЃС‚ РЅРѕРІРѕСЃС‚Рё: РѕС‚ 3 РґРѕ 5000 СЃРёРјРІРѕР»РѕРІ".to_string(),
         ));
     }
     sqlx::query(
@@ -1048,7 +1049,7 @@ pub async fn profile(
     .bind(slug.trim().to_lowercase())
     .fetch_optional(&state.pool)
     .await?
-    .ok_or_else(|| ApiError::NotFound("Команда не найдена".to_string()))?;
+    .ok_or_else(|| ApiError::NotFound("РљРѕРјР°РЅРґР° РЅРµ РЅР°Р№РґРµРЅР°".to_string()))?;
 
     let members = sqlx::query_as::<_, TeamMember>(
         r#"
@@ -1171,10 +1172,10 @@ pub async fn profile(
 fn validate_role(body: &TeamRoleRequest) -> Result<(String, Value), ApiError> {
     let name = body.name.trim().to_lowercase();
     if name.is_empty() || name.chars().count() > 32 {
-        return Err(ApiError::BadRequest("Название роли: от 1 до 32 символов".to_string()));
+        return Err(ApiError::BadRequest("РќР°Р·РІР°РЅРёРµ СЂРѕР»Рё: РѕС‚ 1 РґРѕ 32 СЃРёРјРІРѕР»РѕРІ".to_string()));
     }
     if name == "owner" {
-        return Err(ApiError::BadRequest("Роль владельца менять нельзя".to_string()));
+        return Err(ApiError::BadRequest("Р РѕР»СЊ РІР»Р°РґРµР»СЊС†Р° РјРµРЅСЏС‚СЊ РЅРµР»СЊР·СЏ".to_string()));
     }
     let raw = body.permissions.clone().unwrap_or_else(|| json!({}));
     let mut clean = serde_json::Map::new();
@@ -1190,7 +1191,7 @@ async fn require_manage_team(state: &AppState, headers: &HeaderMap, team_id: Uui
     let allowed = user.role == "admin"
         || access.as_ref().is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_team"));
     if !allowed {
-        return Err(ApiError::Forbidden("Менять роли может владелец и администратор команды".to_string()));
+        return Err(ApiError::Forbidden("РњРµРЅСЏС‚СЊ СЂРѕР»Рё РјРѕР¶РµС‚ РІР»Р°РґРµР»РµС† Рё Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ РєРѕРјР°РЅРґС‹".to_string()));
     }
     Ok(())
 }
@@ -1203,7 +1204,7 @@ async fn find_role(state: &AppState, team_id: Uuid, role_id: Uuid) -> Result<Tea
     .bind(team_id)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or_else(|| ApiError::NotFound("Роль не найдена".to_string()))
+    .ok_or_else(|| ApiError::NotFound("Р РѕР»СЊ РЅРµ РЅР°Р№РґРµРЅР°".to_string()))
 }
 
 pub async fn list_roles(
@@ -1214,7 +1215,7 @@ pub async fn list_roles(
     let user = auth::require_user(&state.pool, &headers).await?;
     let access = member_access(&state.pool, team_id, user.id).await?;
     if user.role != "admin" && access.is_none() {
-        return Err(ApiError::Forbidden("Роли видят только участники команды".to_string()));
+        return Err(ApiError::Forbidden("Р РѕР»Рё РІРёРґСЏС‚ С‚РѕР»СЊРєРѕ СѓС‡Р°СЃС‚РЅРёРєРё РєРѕРјР°РЅРґС‹".to_string()));
     }
     let roles = sqlx::query_as::<_, TeamRole>(
         "SELECT id, name, permissions, position, is_default FROM team_roles WHERE team_id = $1 ORDER BY position, name",
@@ -1234,7 +1235,7 @@ pub async fn create_role(
     require_manage_team(&state, &headers, team_id).await?;
     let (name, permissions) = validate_role(&body)?;
     if role_exists(&state.pool, team_id, &name).await? {
-        return Err(ApiError::BadRequest("Такая роль уже есть".to_string()));
+        return Err(ApiError::BadRequest("РўР°РєР°СЏ СЂРѕР»СЊ СѓР¶Рµ РµСЃС‚СЊ".to_string()));
     }
     let role = sqlx::query_as::<_, TeamRole>(
         r#"
@@ -1265,7 +1266,7 @@ pub async fn update_role(
     let current = find_role(&state, team_id, role_id).await?;
     let (name, permissions) = validate_role(&body)?;
     if current.name != name && role_exists(&state.pool, team_id, &name).await? {
-        return Err(ApiError::BadRequest("Такая роль уже есть".to_string()));
+        return Err(ApiError::BadRequest("РўР°РєР°СЏ СЂРѕР»СЊ СѓР¶Рµ РµСЃС‚СЊ".to_string()));
     }
     let mut tx = state.pool.begin().await?;
     sqlx::query("UPDATE team_roles SET name = $1, permissions = $2 WHERE id = $3")
@@ -1304,7 +1305,7 @@ pub async fn delete_role(
     require_manage_team(&state, &headers, team_id).await?;
     let current = find_role(&state, team_id, role_id).await?;
     if current.name == "owner" || current.is_default {
-        return Err(ApiError::BadRequest("Эту роль удалить нельзя".to_string()));
+        return Err(ApiError::BadRequest("Р­С‚Сѓ СЂРѕР»СЊ СѓРґР°Р»РёС‚СЊ РЅРµР»СЊР·СЏ".to_string()));
     }
     let used = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM team_members WHERE team_id = $1 AND role = $2",
@@ -1314,7 +1315,7 @@ pub async fn delete_role(
     .fetch_one(&state.pool)
     .await?;
     if used > 0 {
-        return Err(ApiError::BadRequest("Роль назначена участникам".to_string()));
+        return Err(ApiError::BadRequest("Р РѕР»СЊ РЅР°Р·РЅР°С‡РµРЅР° СѓС‡Р°СЃС‚РЅРёРєР°Рј".to_string()));
     }
     let invited = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM team_invitations WHERE team_id = $1 AND role = $2 AND status = 'pending'",
@@ -1324,7 +1325,7 @@ pub async fn delete_role(
     .fetch_one(&state.pool)
     .await?;
     if invited > 0 {
-        return Err(ApiError::BadRequest("На роль есть приглашения".to_string()));
+        return Err(ApiError::BadRequest("РќР° СЂРѕР»СЊ РµСЃС‚СЊ РїСЂРёРіР»Р°С€РµРЅРёСЏ".to_string()));
     }
     sqlx::query("DELETE FROM team_roles WHERE id = $1 AND team_id = $2")
         .bind(role_id)
@@ -1335,4 +1336,56 @@ pub async fn delete_role(
         ok: true,
         status: "deleted".to_string(),
     }))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamImageQuery {
+    kind: Option<String>,
+}
+
+pub async fn upload_image(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(team_id): Path<Uuid>,
+    Query(query): Query<TeamImageQuery>,
+    bytes: Bytes,
+) -> Result<Json<Value>, ApiError> {
+    require_manage_team(&state, &headers, team_id).await?;
+    let kind = query.kind.as_deref().unwrap_or("avatar").trim();
+    if !matches!(kind, "avatar" | "banner") {
+        return Err(ApiError::BadRequest("kind: avatar или banner".to_string()));
+    }
+    if bytes.is_empty() || bytes.len() > 2 * 1024 * 1024 {
+        return Err(ApiError::BadRequest(
+            "Файл должен быть не больше 2 МБ".to_string(),
+        ));
+    }
+    let (ext, content_type) = if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        ("png", "image/png")
+    } else if bytes.starts_with(&[0xFF, 0xD8]) {
+        ("jpg", "image/jpeg")
+    } else if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        ("webp", "image/webp")
+    } else {
+        return Err(ApiError::BadRequest(
+            "Поддерживаются PNG, JPEG и WebP".to_string(),
+        ));
+    };
+    let key = format!("teams/{team_id}/{kind}-{}.{ext}", Uuid::new_v4());
+    state
+        .storage
+        .put_bytes(&key, &bytes, Some(content_type))
+        .await
+        .map_err(ApiError::Internal)?;
+    let url = state.storage.public_url(&key);
+    let column = if kind == "avatar" { "avatar_url" } else { "banner_url" };
+    sqlx::query(&format!(
+        "UPDATE teams SET {column} = $2, updated_at = now() WHERE id = $1"
+    ))
+    .bind(team_id)
+    .bind(&url)
+    .execute(&state.pool)
+    .await?;
+    Ok(Json(json!({ "url": url })))
 }

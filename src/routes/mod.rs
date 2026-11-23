@@ -1,4 +1,4 @@
-pub mod admin;
+﻿pub mod admin;
 pub mod auth;
 pub mod authors;
 pub mod catalog;
@@ -118,6 +118,7 @@ pub fn router() -> Router<AppState> {
             "/v1/teams/{id}/follow",
             post(teams::follow).delete(teams::unfollow),
         )
+        .route("/v1/teams/{id}/image", put(teams::upload_image))
         .route("/v1/teams/{id}/news", post(teams::create_news))
         .route(
             "/v1/teams/{id}/members/{user_id}",
