@@ -415,6 +415,24 @@ pub struct TeamJoinRequestItem {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamRole {
+    pub id: Uuid,
+    pub name: String,
+    pub permissions: Value,
+    pub position: i32,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamRoleRequest {
+    pub name: String,
+    #[serde(default)]
+    pub permissions: Option<Value>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamProfile {
@@ -424,6 +442,7 @@ pub struct TeamProfile {
     pub stats: TeamStats,
     pub followers: i64,
     pub news: Vec<TeamNewsItem>,
+    pub roles: Vec<TeamRole>,
     pub role: Option<String>,
     pub following: bool,
     pub permissions: Value,

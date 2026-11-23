@@ -107,6 +107,14 @@ pub fn router() -> Router<AppState> {
         )
         .route("/v1/teams/{id}/transfer", post(teams::transfer))
         .route(
+            "/v1/teams/{id}/roles",
+            get(teams::list_roles).post(teams::create_role),
+        )
+        .route(
+            "/v1/teams/{id}/roles/{role_id}",
+            put(teams::update_role).delete(teams::delete_role),
+        )
+        .route(
             "/v1/teams/{id}/follow",
             post(teams::follow).delete(teams::unfollow),
         )

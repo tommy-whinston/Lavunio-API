@@ -11,7 +11,7 @@ use crate::models::{
     SimpleStatus, Team, TeamCard, TeamDirectoryItem, TeamDirectoryResponse, TeamInvitationItem,
     TeamInviteRequest, TeamJoinRequest, TeamJoinRequestItem, TeamJoinResolveRequest, TeamMember,
     TeamMemberRoleRequest, TeamModeItem, TeamNewsItem, TeamNewsRequest, TeamProfile, TeamRequest,
-    TeamStats, TeamTransferRequest, TeamVerifyRequest,
+    TeamRole, TeamRoleRequest, TeamStats, TeamTransferRequest, TeamVerifyRequest,
 };
 use crate::routes::notifications;
 use crate::AppState;
@@ -23,13 +23,6 @@ pub struct TeamsQuery {
     filter: Option<String>,
     offset: Option<i64>,
     limit: Option<i64>,
-}
-
-fn valid_member_role(role: &str) -> bool {
-    matches!(
-        role,
-        "admin" | "publisher" | "designer" | "builder" | "modeler" | "member"
-    )
 }
 
 fn role_default_permissions(role: &str) -> Value {
@@ -81,12 +74,28 @@ async fn member_access(
     user_id: Uuid,
 ) -> Result<Option<(String, Value)>, ApiError> {
     Ok(sqlx::query_as::<_, (String, Value)>(
-        "SELECT role, permissions FROM team_members WHERE team_id = $1 AND user_id = $2",
+        r#"
+        SELECT m.role, COALESCE(r.permissions, '{}'::jsonb) || COALESCE(m.permissions, '{}'::jsonb)
+        FROM team_members m
+        LEFT JOIN team_roles r ON r.team_id = m.team_id AND r.name = m.role
+        WHERE m.team_id = $1 AND m.user_id = $2
+        "#,
     )
     .bind(team_id)
     .bind(user_id)
     .fetch_optional(pool)
     .await?)
+}
+
+async fn role_exists(pool: &sqlx::PgPool, team_id: Uuid, role: &str) -> Result<bool, ApiError> {
+    let found = sqlx::query_scalar::<_, i32>(
+        "SELECT 1 FROM team_roles WHERE team_id = $1 AND name = $2",
+    )
+    .bind(team_id)
+    .bind(role)
+    .fetch_optional(pool)
+    .await?;
+    Ok(found.is_some())
 }
 
 fn validate_url(value: &Option<String>, label: &str) -> Result<Option<String>, ApiError> {
@@ -439,9 +448,9 @@ pub async fn invite(
     }
 
     let role = body.role.trim().to_lowercase();
-    if !valid_member_role(&role) {
+    if !role_exists(&state.pool, team_id, &role).await? {
         return Err(ApiError::BadRequest(
-            "role: admin, publisher, designer, builder, modeler или member".to_string(),
+            "Неизвестная роль команды".to_string(),
         ));
     }
     if role == "admin" && !is_owner && !is_platform_admin {
@@ -607,9 +616,9 @@ pub async fn set_member_role(
     }
 
     let role = body.role.trim().to_lowercase();
-    if !valid_member_role(&role) {
+    if !role_exists(&state.pool, team_id, &role).await? {
         return Err(ApiError::BadRequest(
-            "role: admin, publisher, designer, builder, modeler или member".to_string(),
+            "Неизвестная роль команды".to_string(),
         ));
     }
     if role == "admin" && !is_owner && !is_platform_admin {
@@ -1128,6 +1137,18 @@ pub async fn profile(
         (None, json!({}), false)
     };
 
+    let roles = sqlx::query_as::<_, TeamRole>(
+        r#"
+        SELECT id, name, permissions, position, is_default
+        FROM team_roles
+        WHERE team_id = $1
+        ORDER BY position, name
+        "#,
+    )
+    .bind(team.id)
+    .fetch_all(&state.pool)
+    .await?;
+
     Ok(Json(TeamProfile {
         team,
         members,
@@ -1140,8 +1161,178 @@ pub async fn profile(
         },
         followers,
         news,
+        roles,
         role,
         following,
         permissions,
+    }))
+}
+
+fn validate_role(body: &TeamRoleRequest) -> Result<(String, Value), ApiError> {
+    let name = body.name.trim().to_lowercase();
+    if name.is_empty() || name.chars().count() > 32 {
+        return Err(ApiError::BadRequest("Название роли: от 1 до 32 символов".to_string()));
+    }
+    if name == "owner" {
+        return Err(ApiError::BadRequest("Роль владельца менять нельзя".to_string()));
+    }
+    let raw = body.permissions.clone().unwrap_or_else(|| json!({}));
+    let mut clean = serde_json::Map::new();
+    for key in ["manage_team", "manage_members", "manage_modes", "manage_news"] {
+        clean.insert(key.to_string(), Value::Bool(raw.get(key).and_then(Value::as_bool).unwrap_or(false)));
+    }
+    Ok((name, Value::Object(clean)))
+}
+
+async fn require_manage_team(state: &AppState, headers: &HeaderMap, team_id: Uuid) -> Result<(), ApiError> {
+    let user = auth::require_user(&state.pool, headers).await?;
+    let access = member_access(&state.pool, team_id, user.id).await?;
+    let allowed = user.role == "admin"
+        || access.as_ref().is_some_and(|(role, permissions)| permission_allowed(role, permissions, "manage_team"));
+    if !allowed {
+        return Err(ApiError::Forbidden("Менять роли может владелец и администратор команды".to_string()));
+    }
+    Ok(())
+}
+
+async fn find_role(state: &AppState, team_id: Uuid, role_id: Uuid) -> Result<TeamRole, ApiError> {
+    sqlx::query_as::<_, TeamRole>(
+        "SELECT id, name, permissions, position, is_default FROM team_roles WHERE id = $1 AND team_id = $2",
+    )
+    .bind(role_id)
+    .bind(team_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("Роль не найдена".to_string()))
+}
+
+pub async fn list_roles(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(team_id): Path<Uuid>,
+) -> Result<Json<Vec<TeamRole>>, ApiError> {
+    let user = auth::require_user(&state.pool, &headers).await?;
+    let access = member_access(&state.pool, team_id, user.id).await?;
+    if user.role != "admin" && access.is_none() {
+        return Err(ApiError::Forbidden("Роли видят только участники команды".to_string()));
+    }
+    let roles = sqlx::query_as::<_, TeamRole>(
+        "SELECT id, name, permissions, position, is_default FROM team_roles WHERE team_id = $1 ORDER BY position, name",
+    )
+    .bind(team_id)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(roles))
+}
+
+pub async fn create_role(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(team_id): Path<Uuid>,
+    Json(body): Json<TeamRoleRequest>,
+) -> Result<Json<TeamRole>, ApiError> {
+    require_manage_team(&state, &headers, team_id).await?;
+    let (name, permissions) = validate_role(&body)?;
+    if role_exists(&state.pool, team_id, &name).await? {
+        return Err(ApiError::BadRequest("Такая роль уже есть".to_string()));
+    }
+    let role = sqlx::query_as::<_, TeamRole>(
+        r#"
+        INSERT INTO team_roles (id, team_id, name, permissions, position)
+        VALUES (
+            $1, $2, $3, $4,
+            COALESCE((SELECT MAX(position) + 10 FROM team_roles WHERE team_id = $2), 10)
+        )
+        RETURNING id, name, permissions, position, is_default
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(team_id)
+    .bind(&name)
+    .bind(&permissions)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(Json(role))
+}
+
+pub async fn update_role(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((team_id, role_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<TeamRoleRequest>,
+) -> Result<Json<TeamRole>, ApiError> {
+    require_manage_team(&state, &headers, team_id).await?;
+    let current = find_role(&state, team_id, role_id).await?;
+    let (name, permissions) = validate_role(&body)?;
+    if current.name != name && role_exists(&state.pool, team_id, &name).await? {
+        return Err(ApiError::BadRequest("Такая роль уже есть".to_string()));
+    }
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("UPDATE team_roles SET name = $1, permissions = $2 WHERE id = $3")
+        .bind(&name)
+        .bind(&permissions)
+        .bind(role_id)
+        .execute(&mut *tx)
+        .await?;
+    if current.name != name {
+        sqlx::query("UPDATE team_members SET role = $1 WHERE team_id = $2 AND role = $3")
+            .bind(&name)
+            .bind(team_id)
+            .bind(&current.name)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE team_invitations SET role = $1 WHERE team_id = $2 AND role = $3")
+            .bind(&name)
+            .bind(team_id)
+            .bind(&current.name)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(Json(TeamRole {
+        name,
+        permissions,
+        ..current
+    }))
+}
+
+pub async fn delete_role(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((team_id, role_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<SimpleStatus>, ApiError> {
+    require_manage_team(&state, &headers, team_id).await?;
+    let current = find_role(&state, team_id, role_id).await?;
+    if current.name == "owner" || current.is_default {
+        return Err(ApiError::BadRequest("Эту роль удалить нельзя".to_string()));
+    }
+    let used = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM team_members WHERE team_id = $1 AND role = $2",
+    )
+    .bind(team_id)
+    .bind(&current.name)
+    .fetch_one(&state.pool)
+    .await?;
+    if used > 0 {
+        return Err(ApiError::BadRequest("Роль назначена участникам".to_string()));
+    }
+    let invited = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM team_invitations WHERE team_id = $1 AND role = $2 AND status = 'pending'",
+    )
+    .bind(team_id)
+    .bind(&current.name)
+    .fetch_one(&state.pool)
+    .await?;
+    if invited > 0 {
+        return Err(ApiError::BadRequest("На роль есть приглашения".to_string()));
+    }
+    sqlx::query("DELETE FROM team_roles WHERE id = $1 AND team_id = $2")
+        .bind(role_id)
+        .bind(team_id)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(SimpleStatus {
+        ok: true,
+        status: "deleted".to_string(),
     }))
 }
