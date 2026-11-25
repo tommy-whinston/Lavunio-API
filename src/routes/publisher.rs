@@ -479,11 +479,17 @@ pub async fn upload_url(
             .await
             .map_err(ApiError::Internal)?
     } else {
+        let upload_path = if matches!(kind, "screenshot" | "cover") {
+            "upload-image"
+        } else {
+            "upload"
+        };
         format!(
-            "{}/v1/publisher/releases/{}/assets/{}/upload",
+            "{}/v1/publisher/releases/{}/assets/{}/{}",
             state.config.public_base_url.trim_end_matches('/'),
             release_id,
-            asset_id
+            asset_id,
+            upload_path
         )
     };
 
