@@ -244,6 +244,57 @@ async fn register_login_refresh_logout_flow(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn login_and_password_reset_accept_account_id(pool: PgPool) {
+    let (state, _dir) = test_state(pool);
+    let app = app(state);
+    let password = "id login password";
+
+    register(&app, "idlogin@example.com", "idlogin", password).await;
+
+    let (status, login) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/auth/login",
+        None,
+        Some(json!({ "identifier": "IDLOGIN", "password": password })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{login}");
+    assert_eq!(login["user"]["username"], "idlogin");
+
+    let (status, login) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/auth/login",
+        None,
+        Some(json!({ "username": "idlogin", "password": password })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{login}");
+
+    let (status, forgot) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/auth/password/forgot",
+        None,
+        Some(json!({ "identifier": "idlogin" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{forgot}");
+    assert!(forgot["resetToken"].is_string());
+
+    let (status, missing) = send(
+        app,
+        Method::POST,
+        "/v1/auth/login",
+        None,
+        Some(json!({ "password": password })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{missing}");
+}
+
+#[sqlx::test]
 async fn password_reset_revokes_sessions(pool: PgPool) {
     let (state, _dir) = test_state(pool);
     let app = app(state);

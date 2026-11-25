@@ -11,7 +11,7 @@
 - `GET /v1/health` — состояние API и базы.
 - `GET /v1/metrics` — метрики Prometheus: uptime, запросы, ошибки, БД, очередь модерации.
 - `POST /v1/auth/register` — регистрация по email и паролю (Argon2id).
-- `POST /v1/auth/login` — вход, access/refresh-токены.
+- `POST /v1/auth/login` — вход по email или ID аккаунта, access/refresh-токены.
 - `POST /v1/auth/refresh` — обновление пары токенов.
 - `POST /v1/auth/logout` — отзыв текущей сессии.
 - `POST /v1/auth/verify-email` — подтверждение почты по токену.
@@ -129,7 +129,7 @@ Authorization: Bearer <token>
 
 ## Аккаунты Lavunio
 
-Аккаунты используют email и пароль. Пароли хранятся как Argon2id-хеши, access- и refresh-токены — только в виде SHA-256-хешей в таблице `sessions`. Игровые токены Minecraft хранятся в `game_sessions`.
+Аккаунты используют email (или ID аккаунта) и пароль. Пароли хранятся как Argon2id-хеши, access- и refresh-токены — только в виде SHA-256-хешей в таблице `sessions`. Игровые токены Minecraft хранятся в `game_sessions`.
 
 Корень API (`GET /`) содержит metadata для `authlib-injector`: имя сервера и `skinDomains`. Yggdrasil-совместимые endpoints находятся в `/authserver` и `/sessionserver`.
 

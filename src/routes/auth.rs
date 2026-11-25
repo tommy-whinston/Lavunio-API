@@ -278,17 +278,24 @@ pub async fn login(
     headers: HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, ApiError> {
-    let email = auth::normalize_email(&body.email);
-    state.rate_limiter.check(Bucket::Login, &email)?;
+    let login = body.login();
+    if login.is_empty() {
+        return Err(ApiError::BadRequest(
+            "Укажите email или ID аккаунта".to_string(),
+        ));
+    }
+    state
+        .rate_limiter
+        .check(Bucket::Login, &login.to_lowercase())?;
     let row = sqlx::query_as::<_, LoginRow>(
         r#"
         SELECT id, username, display_name, email, email_verified_at, avatar_url, role,
                created_at, password_hash, minecraft_uuid, skin_url, skin_model, cape_url
         FROM users
-        WHERE lower(email) = $1
+        WHERE lower(email) = lower($1) OR lower(username) = lower($1)
         "#,
     )
-    .bind(&email)
+    .bind(&login)
     .fetch_optional(&state.pool)
     .await?;
 
@@ -307,12 +314,12 @@ pub async fn login(
     let password_ok = auth::verify_password(body.password, hash).await;
     if !password_ok || !has_password {
         return Err(ApiError::Unauthorized(
-            "Неверный email или пароль".to_string(),
+            "Неверный email, ID или пароль".to_string(),
         ));
     }
 
     let user =
-        user.ok_or_else(|| ApiError::Unauthorized("Неверный email или пароль".to_string()))?;
+        user.ok_or_else(|| ApiError::Unauthorized("Неверный email, ID или пароль".to_string()))?;
     if user.email_verified_at.is_none() {
         let target_email = user
             .email
@@ -838,12 +845,19 @@ pub async fn forgot_password(
 ) -> Result<Json<ForgotPasswordResponse>, ApiError> {
     let ip = auth::client_ip(&headers).unwrap_or_else(|| "unknown".to_string());
     state.rate_limiter.check(Bucket::Reset, &ip)?;
-    let email = auth::normalize_email(&body.email);
-    let user =
-        sqlx::query_as::<_, (Uuid, String)>("SELECT id, email FROM users WHERE lower(email) = $1")
-            .bind(&email)
-            .fetch_optional(&state.pool)
-            .await?;
+    let login = body.login();
+    if login.is_empty() {
+        return Err(ApiError::BadRequest(
+            "Укажите email или ID аккаунта".to_string(),
+        ));
+    }
+    let login = login.to_lowercase();
+    let user = sqlx::query_as::<_, (Uuid, String)>(
+        "SELECT id, email FROM users WHERE email IS NOT NULL AND (lower(email) = $1 OR lower(username) = $1)",
+    )
+    .bind(&login)
+    .fetch_optional(&state.pool)
+    .await?;
 
     if let Some((user_id, email)) = user {
         let token = auth::random_token();

@@ -997,6 +997,20 @@ fn default_true() -> bool {
     true
 }
 
+fn login_identifier(
+    identifier: Option<&str>,
+    email: Option<&str>,
+    username: Option<&str>,
+) -> String {
+    [identifier, email, username]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_string()
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterRequest {
@@ -1020,8 +1034,23 @@ pub struct RegisterResponse {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginRequest {
-    pub email: String,
+    #[serde(default)]
+    pub identifier: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
     pub password: String,
+}
+
+impl LoginRequest {
+    pub fn login(&self) -> String {
+        login_identifier(
+            self.identifier.as_deref(),
+            self.email.as_deref(),
+            self.username.as_deref(),
+        )
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1135,7 +1164,22 @@ pub struct VerifyLoginRequest {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForgotPasswordRequest {
-    pub email: String,
+    #[serde(default)]
+    pub identifier: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+}
+
+impl ForgotPasswordRequest {
+    pub fn login(&self) -> String {
+        login_identifier(
+            self.identifier.as_deref(),
+            self.email.as_deref(),
+            self.username.as_deref(),
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
