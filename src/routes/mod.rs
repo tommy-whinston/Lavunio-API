@@ -118,7 +118,10 @@ pub fn router() -> Router<AppState> {
             "/v1/teams/{id}/follow",
             post(teams::follow).delete(teams::unfollow),
         )
-        .route("/v1/teams/{id}/image", put(teams::upload_image))
+        .route(
+            "/v1/teams/{id}/image",
+            put(teams::upload_image).layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
+        )
         .route("/v1/teams/{id}/news", post(teams::create_news))
         .route(
             "/v1/teams/{id}/members/{user_id}",
