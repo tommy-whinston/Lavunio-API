@@ -415,9 +415,7 @@ pub async fn rotate_session(
     let user: AuthSession = row.into();
 
     let access_token = random_token();
-    // Keep the refresh token stable. The launcher can briefly run twice during
-    // self-update, and rotating the token in one instance logs the other one out.
-    let refresh_token = refresh_token.to_string();
+    let refresh_token = random_token();
     let now = Utc::now();
     let access_expires_at = now + Duration::seconds(ttl_secs(access_ttl_secs));
     let refresh_expires_at = now + Duration::seconds(ttl_secs(refresh_ttl_secs));
@@ -426,14 +424,16 @@ pub async fn rotate_session(
         r#"
         UPDATE sessions
         SET access_hash = $2,
-            access_expires_at = $3,
-            refresh_expires_at = $4,
+            refresh_hash = $3,
+            access_expires_at = $4,
+            refresh_expires_at = $5,
             last_used_at = now()
         WHERE id = $1 AND revoked_at IS NULL
         "#,
     )
     .bind(session_id)
     .bind(hash_token(&access_token))
+    .bind(hash_token(&refresh_token))
     .bind(access_expires_at)
     .bind(refresh_expires_at)
     .execute(pool)

@@ -299,6 +299,12 @@ pub async fn login(
     .fetch_optional(&state.pool)
     .await?;
 
+    if let Some(row) = row.as_ref() {
+        state
+            .rate_limiter
+            .check(Bucket::Login, &format!("user:{}", row.id))?;
+    }
+
     let (user, hash, has_password) = match row {
         Some(row) => {
             let hash = row
@@ -860,6 +866,9 @@ pub async fn forgot_password(
     .await?;
 
     if let Some((user_id, email)) = user {
+        state
+            .rate_limiter
+            .check(Bucket::Reset, &format!("user:{user_id}"))?;
         let token = auth::random_token();
         let expires_at = Utc::now() + ttl(state.config.reset_token_ttl_secs);
         let mut tx = state.pool.begin().await?;

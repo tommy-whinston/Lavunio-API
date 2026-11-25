@@ -102,20 +102,6 @@ async fn role_exists(pool: &sqlx::PgPool, team_id: Uuid, role: &str) -> Result<b
     Ok(found.is_some())
 }
 
-fn validate_url(value: &Option<String>, label: &str) -> Result<Option<String>, ApiError> {
-    let Some(raw) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) else {
-        return Ok(None);
-    };
-    if !raw.starts_with("http://") && !raw.starts_with("https://") {
-        return Err(ApiError::BadRequest(format!(
-            "{label} РґРѕР»Р¶РЅР° РЅР°С‡РёРЅР°С‚СЊСЃСЏ СЃ http:// РёР»Рё https://"
-        )));
-    }
-    if raw.chars().count() > 500 {
-        return Err(ApiError::BadRequest(format!("{label} СЃР»РёС€РєРѕРј РґР»РёРЅРЅР°СЏ")));
-    }
-    Ok(Some(raw.to_string()))
-}
 
 fn validate_request(body: &TeamRequest) -> Result<(String, String, String, String), ApiError> {
     let slug = body.slug.trim().to_lowercase();
@@ -280,8 +266,6 @@ pub async fn create(
 ) -> Result<Json<Team>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
     let (slug, title, description, links) = validate_request(&body)?;
-    let avatar_url = validate_url(&body.avatar_url, "РЎСЃС‹Р»РєР° РЅР° Р°РІР°С‚Р°СЂ")?;
-    let banner_url = validate_url(&body.banner_url, "РЎСЃС‹Р»РєР° РЅР° Р±Р°РЅРЅРµСЂ")?;
     let join_mode = body.join_mode.as_deref().unwrap_or("invite").trim();
     if !matches!(join_mode, "invite" | "request" | "open") {
         return Err(ApiError::BadRequest(
@@ -294,8 +278,8 @@ pub async fn create(
     sqlx::query(
         r#"
         INSERT INTO teams
-            (id, slug, title, description, links, avatar_url, banner_url, owner_id, join_mode)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            (id, slug, title, description, links, owner_id, join_mode)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
     )
     .bind(id)
@@ -303,8 +287,6 @@ pub async fn create(
     .bind(&title)
     .bind(&description)
     .bind(&links)
-    .bind(&avatar_url)
-    .bind(&banner_url)
     .bind(user.id)
     .bind(join_mode)
     .execute(&mut *tx)
@@ -345,8 +327,6 @@ pub async fn update(
         ));
     }
     let (slug, title, description, links) = validate_request(&body)?;
-    let avatar_url = validate_url(&body.avatar_url, "РЎСЃС‹Р»РєР° РЅР° Р°РІР°С‚Р°СЂ")?;
-    let banner_url = validate_url(&body.banner_url, "РЎСЃС‹Р»РєР° РЅР° Р±Р°РЅРЅРµСЂ")?;
     let join_mode = body.join_mode.as_deref().unwrap_or("invite").trim();
     if !matches!(join_mode, "invite" | "request" | "open") {
         return Err(ApiError::BadRequest(
@@ -358,7 +338,7 @@ pub async fn update(
         r#"
         UPDATE teams
         SET slug = $2, title = $3, description = $4, links = $5,
-            avatar_url = $6, banner_url = $7, join_mode = $8, updated_at = now()
+            join_mode = $6, updated_at = now()
         WHERE id = $1
         "#,
     )
@@ -367,8 +347,6 @@ pub async fn update(
     .bind(&title)
     .bind(&description)
     .bind(&links)
-    .bind(&avatar_url)
-    .bind(&banner_url)
     .bind(join_mode)
     .execute(&state.pool)
     .await

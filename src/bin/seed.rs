@@ -62,22 +62,20 @@ async fn seed_mode(
     let title = mode["title"].as_str().unwrap_or(slug);
     let short_description = mode["shortDescription"].as_str().unwrap_or_default();
     let description = mode["description"].as_str().unwrap_or_default();
-    let cover_url = mode["imageUrl"].as_str();
     let version = mode["version"].as_str().unwrap_or("1.0.0");
     let changelog = mode["changelog"].as_str().unwrap_or_default();
 
     let mode_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         INSERT INTO modes
-            (id, slug, title, short_description, description, status, cover_url, author_id,
+            (id, slug, title, short_description, description, status, author_id,
              mc_version, loader, loader_version, size_label)
-        VALUES ($1, $2, $3, $4, $5, 'published', $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, 'published', $6, $7, $8, $9, $10)
         ON CONFLICT (slug) DO UPDATE
             SET title = EXCLUDED.title,
                 short_description = EXCLUDED.short_description,
                 description = EXCLUDED.description,
                 status = 'published',
-                cover_url = EXCLUDED.cover_url,
                 author_id = EXCLUDED.author_id,
                 mc_version = EXCLUDED.mc_version,
                 loader = EXCLUDED.loader,
@@ -92,7 +90,6 @@ async fn seed_mode(
     .bind(title)
     .bind(short_description)
     .bind(description)
-    .bind(cover_url)
     .bind(user_id)
     .bind(mode["mcVersion"].as_str().unwrap_or_default())
     .bind(mode["loader"].as_str().unwrap_or("vanilla"))
@@ -174,16 +171,6 @@ async fn seed_mode(
         .execute(pool)
         .await?;
 
-    if let Some(cover_url) = cover_url {
-        sqlx::query(
-            "INSERT INTO release_assets (id, release_id, kind, url, size) VALUES ($1, $2, 'cover', $3, 0)",
-        )
-        .bind(Uuid::new_v4())
-        .bind(release_id)
-        .bind(cover_url)
-        .execute(pool)
-        .await?;
-    }
 
     let manifest_path = format!("seed/{slug}.manifest.json");
     if let Ok(manifest_text) = fs::read_to_string(&manifest_path) {

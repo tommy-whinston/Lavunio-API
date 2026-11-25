@@ -1,0 +1,1 @@
+ALTER TABLE modes DROP COLUMN IF EXISTS trailer_url;

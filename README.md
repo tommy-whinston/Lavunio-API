@@ -31,7 +31,7 @@
 - `DELETE /v1/news/{id}` — удалить новость (автор или админ).
   - Параметры: `q`, `tag`, `mcVersion`, `loader`, `author`, `sort` (`updated`, `newest`, `title`, `installs`), `page`, `limit`.
   - Элемент каталога содержит `installs` и `screenshots` последнего опубликованного релиза.
-- `GET /v1/modes/{slug}` — карточка режима, включая трейлер и скриншоты.
+- `GET /v1/modes/{slug}` — карточка режима и скриншоты.
 - `GET /v1/modes/{slug}/releases` — опубликованные релизы с файлами.
 - `GET /v1/modes/{slug}/reviews` — опубликованные отзывы и средний рейтинг.
 - `POST /v1/modes/{slug}/reviews` — отправить или обновить свой отзыв; публикуется после модерации.
