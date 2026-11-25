@@ -130,7 +130,7 @@ async fn mode_summary(pool: &PgPool, row: ModeRow) -> Result<ModeSummary, ApiErr
           AND a.kind = 'screenshot'
           AND a.url <> ''
         ORDER BY r.published_at DESC NULLS LAST, a.created_at
-        LIMIT 12
+        LIMIT 10
         "#,
     )
     .bind(row.id)

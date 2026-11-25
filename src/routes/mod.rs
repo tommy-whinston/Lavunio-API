@@ -205,7 +205,7 @@ pub fn router() -> Router<AppState> {
             "/v1/publisher/modes/{id}/cover",
             put(publisher::upload_cover)
                 .delete(publisher::delete_cover)
-                .layer(DefaultBodyLimit::max(8 * 1024 * 1024)),
+                .layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
         )
         .route(
             "/v1/publisher/releases/{id}/assets/upload-url",

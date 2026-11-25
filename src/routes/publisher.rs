@@ -19,6 +19,9 @@ use crate::models::{
 use crate::storage::{Storage, StorageKind};
 use crate::AppState;
 
+const MAX_IMAGE_BYTES: i64 = 2 * 1024 * 1024;
+const MAX_MODE_SCREENSHOTS: i64 = 10;
+
 #[derive(Debug, FromRow)]
 struct ReleaseOwnerRow {
     author_id: Uuid,
@@ -29,6 +32,7 @@ struct ReleaseOwnerRow {
 #[derive(Debug, FromRow)]
 struct AssetUploadRow {
     author_id: Uuid,
+    kind: String,
     status: String,
     size: i64,
     sha256: Option<String>,
@@ -432,6 +436,36 @@ pub async fn upload_url(
     if body.file_name.trim().is_empty() {
         return Err(ApiError::BadRequest("Укажи имя файла".to_string()));
     }
+    if matches!(kind, "screenshot" | "cover") {
+        if body.size <= 0 {
+            return Err(ApiError::BadRequest(
+                "Не удалось определить размер изображения".to_string(),
+            ));
+        }
+        if body.size > MAX_IMAGE_BYTES {
+            return Err(ApiError::BadRequest(
+                "Одна картинка должна быть не больше 2 МБ".to_string(),
+            ));
+        }
+    }
+    if kind == "screenshot" {
+        let count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM release_assets a
+            JOIN releases r ON r.id = a.release_id
+            WHERE r.mode_id = $1 AND a.kind = 'screenshot'
+            "#,
+        )
+        .bind(release.mode_id)
+        .fetch_one(&state.pool)
+        .await?;
+        if count >= MAX_MODE_SCREENSHOTS {
+            return Err(ApiError::BadRequest(
+                "У режима уже максимум 10 скриншотов".to_string(),
+            ));
+        }
+    }
 
     let asset_id = Uuid::new_v4();
     let storage_kind = state.storage.kind();
@@ -507,7 +541,7 @@ pub async fn upload_asset(
     let user = auth::require_user(&state.pool, &headers).await?;
     let asset = sqlx::query_as::<_, AssetUploadRow>(
         r#"
-        SELECT m.author_id, r.status, a.size, a.sha256, a.storage_key
+        SELECT m.author_id, a.kind, r.status, a.size, a.sha256, a.storage_key
         FROM release_assets a
         JOIN releases r ON r.id = a.release_id
         JOIN modes m ON m.id = r.mode_id
@@ -524,6 +558,13 @@ pub async fn upload_asset(
     if asset.status == "published" {
         return Err(ApiError::Conflict(
             "Опубликованный релиз нельзя изменить".to_string(),
+        ));
+    }
+    if matches!(asset.kind.as_str(), "screenshot" | "cover")
+        && bytes.len() as i64 > MAX_IMAGE_BYTES
+    {
+        return Err(ApiError::BadRequest(
+            "Одна картинка должна быть не больше 2 МБ".to_string(),
         ));
     }
     if asset.size > 0 && bytes.len() as i64 != asset.size {
@@ -589,7 +630,7 @@ pub async fn complete_asset(
     let user = auth::require_user(&state.pool, &headers).await?;
     let asset = sqlx::query_as::<_, AssetUploadRow>(
         r#"
-        SELECT m.author_id, r.status, a.size, a.sha256, a.storage_key
+        SELECT m.author_id, a.kind, r.status, a.size, a.sha256, a.storage_key
         FROM release_assets a
         JOIN releases r ON r.id = a.release_id
         JOIN modes m ON m.id = r.mode_id
@@ -619,6 +660,11 @@ pub async fn complete_asset(
             .head_size(key)
             .await
             .map_err(ApiError::Internal)?;
+        if matches!(asset.kind.as_str(), "screenshot" | "cover") && size > MAX_IMAGE_BYTES as u64 {
+            return Err(ApiError::BadRequest(
+                "Одна картинка должна быть не больше 2 МБ".to_string(),
+            ));
+        }
         if let Some(expected) = body.size {
             if expected >= 0 && expected as u64 != size {
                 return Err(ApiError::BadRequest(format!(
@@ -871,8 +917,10 @@ pub async fn upload_cover(
 ) -> Result<Json<CoverResponse>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
     ensure_mode_owner(&state.pool, &user, mode_id).await?;
-    if bytes.len() > 8 * 1024 * 1024 {
-        return Err(ApiError::BadRequest("Обложка больше 8 МБ".to_string()));
+    if bytes.len() > MAX_IMAGE_BYTES as usize {
+        return Err(ApiError::BadRequest(
+            "Обложка должна быть не больше 2 МБ".to_string(),
+        ));
     }
 
     let format = image::guess_format(&bytes).map_err(|_| {
