@@ -171,7 +171,6 @@ async fn seed_mode(
         .execute(pool)
         .await?;
 
-
     let manifest_path = format!("seed/{slug}.manifest.json");
     if let Ok(manifest_text) = fs::read_to_string(&manifest_path) {
         let manifest: Value = serde_json::from_str(&manifest_text)?;

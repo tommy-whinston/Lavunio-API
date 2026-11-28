@@ -566,8 +566,7 @@ pub async fn upload_asset(
             "Опубликованный релиз нельзя изменить".to_string(),
         ));
     }
-    if matches!(asset.kind.as_str(), "screenshot" | "cover")
-        && bytes.len() as i64 > MAX_IMAGE_BYTES
+    if matches!(asset.kind.as_str(), "screenshot" | "cover") && bytes.len() as i64 > MAX_IMAGE_BYTES
     {
         return Err(ApiError::BadRequest(
             "Одна картинка должна быть не больше 2 МБ".to_string(),

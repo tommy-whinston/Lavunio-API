@@ -188,12 +188,13 @@ pub async fn posts(
     Path(username): Path<String>,
     Query(query): Query<PostsQuery>,
 ) -> Result<Json<ProfilePostsResponse>, ApiError> {
-    let user_id =
-        sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE lower(username) = lower($1) OR lower(display_name) = lower($1)")
-            .bind(username.trim())
-            .fetch_optional(&state.pool)
-            .await?
-            .ok_or_else(|| ApiError::NotFound("Игрок не найден".to_string()))?;
+    let user_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE lower(username) = lower($1) OR lower(display_name) = lower($1)",
+    )
+    .bind(username.trim())
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("Игрок не найден".to_string()))?;
     let offset = query.offset.unwrap_or(0).max(0);
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
     let total =
