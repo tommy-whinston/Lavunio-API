@@ -20,8 +20,8 @@ use lavunio_api::{app, AppState};
 fn make_zip(name: &str, data: &[u8]) -> Vec<u8> {
     use std::io::{Cursor, Write};
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored);
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     writer.start_file(name, options).unwrap();
     writer.write_all(data).unwrap();
     writer.finish().unwrap().into_inner()
@@ -591,7 +591,10 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK, "{asset}");
     assert_eq!(asset["size"], archive_bytes.len());
-    assert_eq!(asset["manifest"]["files"]["mods/test.jar"]["size"], jar.len());
+    assert_eq!(
+        asset["manifest"]["files"]["mods/test.jar"]["size"],
+        jar.len()
+    );
     assert!(asset["url"].as_str().unwrap().contains("/uploads/"));
 
     let (status, shot_upload) = send(
@@ -687,7 +690,7 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
     assert_eq!(mine[0]["releases"][0]["status"], "published");
     assert_eq!(
         mine[0]["releases"][0]["assets"][0]["manifest"]["files"]["mods/test.jar"]["size"],
-        11
+        jar.len()
     );
 
     for event in ["download", "install", "update"] {
