@@ -1,11 +1,15 @@
 ALTER TABLE teams
-    ADD COLUMN join_mode TEXT NOT NULL DEFAULT 'invite'
+    ADD COLUMN IF NOT EXISTS join_mode TEXT NOT NULL DEFAULT 'invite'
         CHECK (join_mode IN ('invite', 'request', 'open')),
-    ADD COLUMN verified BOOLEAN NOT NULL DEFAULT false;
+    ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT false;
 
-ALTER TABLE modes
-    ADD CONSTRAINT modes_team_id_fkey
-    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL;
+-- FK на modes.team_id может уже существовать: 0001 создаёт колонку с inline
+-- REFERENCES, поэтому добавляем только при отсутствии (свежие БД).
+DO $$ BEGIN
+    ALTER TABLE modes
+        ADD CONSTRAINT modes_team_id_fkey
+        FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE TABLE team_join_requests (
     id UUID PRIMARY KEY,
