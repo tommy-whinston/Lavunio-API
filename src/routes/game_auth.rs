@@ -85,7 +85,7 @@ pub struct UpdateSkinModelRequest {
 #[derive(Debug, FromRow)]
 pub struct GameUserRow {
     id: Uuid,
-    username: String,
+    display_name: String,
     minecraft_uuid: Uuid,
     skin_url: Option<String>,
     skin_model: String,
@@ -138,7 +138,7 @@ fn profile_json(user: &GameUserRow) -> Value {
         let payload = json!({
             "timestamp": Utc::now().timestamp_millis(),
             "profileId": user.minecraft_uuid.simple().to_string(),
-            "profileName": user.username,
+            "profileName": user.display_name,
             "textures": textures,
         });
         let encoded = BASE64.encode(serde_json::to_vec(&payload).unwrap_or_default());
@@ -147,7 +147,7 @@ fn profile_json(user: &GameUserRow) -> Value {
 
     json!({
         "id": user.minecraft_uuid.simple().to_string(),
-        "name": user.username,
+        "name": user.display_name,
         "properties": properties,
     })
 }
@@ -194,13 +194,13 @@ fn auth_response(
     access_token: String,
     client_token: String,
     user_id: Uuid,
-    username: &str,
+    game_name: &str,
     uuid: Uuid,
     request_user: bool,
 ) -> Value {
     let profile = json!({
         "id": uuid.simple().to_string(),
-        "name": username,
+        "name": game_name,
     });
     let mut response = json!({
         "accessToken": access_token,
@@ -232,7 +232,7 @@ pub async fn create_game_session(
         expires_in: ttl as i64,
         profile: GameProfile {
             id: uuid.simple().to_string(),
-            name: user.username,
+            name: account.display_name.clone(),
         },
         skin_url: account.skin_url,
         skin_model: account.skin_model,
@@ -278,7 +278,7 @@ pub async fn authenticate(
 
     let row = sqlx::query_as::<_, (Uuid, String, Option<String>, Uuid)>(
         r#"
-        SELECT id, username, password_hash, minecraft_uuid
+        SELECT id, display_name, password_hash, minecraft_uuid
         FROM users
         WHERE lower(email) = lower($1) OR lower(username) = lower($1)
         "#,
@@ -299,7 +299,7 @@ pub async fn authenticate(
         }
     };
 
-    let Some((user_id, username, password_hash, minecraft_uuid)) = row else {
+    let Some((user_id, display_name, password_hash, minecraft_uuid)) = row else {
         let _ = auth::verify_password(
             body.password.clone(),
             auth::dummy_password_hash().to_string(),
@@ -328,7 +328,7 @@ pub async fn authenticate(
                 access_token,
                 client_token,
                 user_id,
-                &username,
+                &display_name,
                 minecraft_uuid,
                 body.request_user,
             );
@@ -348,7 +348,7 @@ pub async fn authenticate(
 pub async fn refresh(State(state): State<AppState>, Json(body): Json<RefreshRequest>) -> Response {
     let row = sqlx::query_as::<_, (Uuid, Uuid, Option<String>, String, Uuid)>(
         r#"
-        SELECT gs.id, u.id, gs.client_hash, u.username, u.minecraft_uuid
+        SELECT gs.id, u.id, gs.client_hash, u.display_name, u.minecraft_uuid
         FROM game_sessions gs
         JOIN users u ON u.id = gs.user_id
         WHERE gs.access_hash = $1
@@ -372,7 +372,7 @@ pub async fn refresh(State(state): State<AppState>, Json(body): Json<RefreshRequ
         }
     };
 
-    let Some((session_id, user_id, client_hash, username, minecraft_uuid)) = row else {
+    let Some((session_id, user_id, client_hash, display_name, minecraft_uuid)) = row else {
         return forbidden("Сессия истекла, войдите заново");
     };
     if let (Some(expected), Some(actual)) = (client_hash.as_deref(), body.client_token.as_deref()) {
@@ -419,7 +419,7 @@ pub async fn refresh(State(state): State<AppState>, Json(body): Json<RefreshRequ
         access_token,
         client_token,
         user_id,
-        &username,
+        &display_name,
         minecraft_uuid,
         body.request_user,
     );
@@ -517,7 +517,7 @@ pub async fn profile(State(state): State<AppState>, Path(uuid): Path<String>) ->
     };
     let row = sqlx::query_as::<_, GameUserRow>(
         r#"
-        SELECT id, username, minecraft_uuid, skin_url, skin_model, cape_url
+        SELECT id, display_name, minecraft_uuid, skin_url, skin_model, cape_url
         FROM users
         WHERE minecraft_uuid = $1
         "#,
@@ -593,9 +593,9 @@ pub async fn has_joined(
     let _ = query.ip;
     let row = sqlx::query_as::<_, GameUserRow>(
         r#"
-        SELECT id, username, minecraft_uuid, skin_url, skin_model, cape_url
+        SELECT id, display_name, minecraft_uuid, skin_url, skin_model, cape_url
         FROM users
-        WHERE lower(username) = lower($1)
+        WHERE lower(display_name) = lower($1)
         "#,
     )
     .bind(query.username.trim())

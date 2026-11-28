@@ -146,6 +146,14 @@ pub async fn update_profile(
     if display_name.is_empty() || display_name.chars().count() > 16 {
         return Err(ApiError::BadRequest("Ник: от 1 до 16 символов".to_string()));
     }
+    if !display_name
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    {
+        return Err(ApiError::BadRequest(
+            "Ник: только латиница, цифры и _".to_string(),
+        ));
+    }
     let bio = body.bio.trim();
     if bio.chars().count() > 500 {
         return Err(ApiError::BadRequest(
@@ -161,6 +169,16 @@ pub async fn update_profile(
     .await?;
     if taken {
         return Err(ApiError::Conflict("Этот ID уже занят".to_string()));
+    }
+    let display_taken = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM users WHERE lower(display_name) = lower($1) AND id <> $2)",
+    )
+    .bind(display_name)
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    if display_taken {
+        return Err(ApiError::Conflict("Этот ник уже занят".to_string()));
     }
     sqlx::query("UPDATE users SET username = $2, display_name = $3, bio = $4, updated_at = now() WHERE id = $1")
         .bind(user.id)
