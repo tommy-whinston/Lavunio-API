@@ -131,7 +131,21 @@ async fn register(pool: PgPool) -> (AppState, tempfile::TempDir, Router, String,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    let token = body["tokens"]["accessToken"]
+    /* Регистрация требует подтверждения email: в dev-режиме код возвращается в ответе. */
+    let code = body["verificationToken"]
+        .as_str()
+        .expect("verification token")
+        .to_string();
+    let (status, verified) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/auth/register/verify",
+        None,
+        Some(json!({ "email": "gamer@example.com", "code": code })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{verified}");
+    let token = verified["tokens"]["accessToken"]
         .as_str()
         .expect("access token")
         .to_string();
