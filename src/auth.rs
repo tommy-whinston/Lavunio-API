@@ -150,6 +150,14 @@ pub fn validate_username(value: &str) -> bool {
             .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
 }
 
+pub fn validate_display_name(value: &str) -> bool {
+    let length = value.chars().count();
+    (1..=16).contains(&length)
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+}
+
 pub fn validate_password(value: &str) -> bool {
     (8..=128).contains(&value.chars().count()) && value.chars().any(|ch| !ch.is_whitespace())
 }

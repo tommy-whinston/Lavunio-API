@@ -85,12 +85,14 @@ pub async fn register(
         ));
     }
 
-    let username = body
+    let provided_username = body
         .username
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| value.to_ascii_lowercase())
+        .map(|value| value.to_ascii_lowercase());
+    let mut username = provided_username
+        .clone()
         .unwrap_or_else(|| auth::username_from_email(&email));
     if !auth::validate_username(&username) {
         return Err(ApiError::BadRequest(
@@ -105,6 +107,11 @@ pub async fn register(
         .filter(|value| !value.is_empty())
         .map(|value| value.chars().take(16).collect::<String>())
         .unwrap_or_else(|| username.chars().take(16).collect());
+    if !auth::validate_display_name(&display_name) {
+        return Err(ApiError::BadRequest(
+            "Ник: 1–16 символов, латиница, цифры и _".to_string(),
+        ));
+    }
 
     let email_taken = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS (SELECT 1 FROM users WHERE lower(email) = $1)",
@@ -123,9 +130,36 @@ pub async fn register(
     .fetch_one(&state.pool)
     .await?;
     if username_taken {
-        return Err(ApiError::Conflict(
-            "Имя пользователя уже занято".to_string(),
-        ));
+        if provided_username.is_some() {
+            return Err(ApiError::Conflict(
+                "Имя пользователя уже занято".to_string(),
+            ));
+        }
+        let base: String = username.chars().take(11).collect();
+        for _ in 0..20 {
+            let suffix = &Uuid::new_v4().simple().to_string()[..5];
+            let candidate = format!("{base}{suffix}");
+            let exists = sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (SELECT 1 FROM users WHERE lower(username) = lower($1))",
+            )
+            .bind(&candidate)
+            .fetch_one(&state.pool)
+            .await?;
+            if !exists {
+                username = candidate;
+                break;
+            }
+        }
+    }
+
+    let display_taken = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM users WHERE lower(display_name) = lower($1))",
+    )
+    .bind(&display_name)
+    .fetch_one(&state.pool)
+    .await?;
+    if display_taken {
+        return Err(ApiError::Conflict("Этот ник уже занят".to_string()));
     }
 
     let password_hash = auth::hash_password(body.password.clone()).await?;
@@ -292,7 +326,7 @@ pub async fn login(
         SELECT id, username, display_name, email, email_verified_at, avatar_url, role,
                created_at, password_hash, minecraft_uuid, skin_url, skin_model, cape_url
         FROM users
-        WHERE lower(email) = lower($1) OR lower(username) = lower($1)
+        WHERE lower(email) = lower($1) OR lower(username) = lower($1) OR lower(display_name) = lower($1)
         "#,
     )
     .bind(&login)
@@ -859,7 +893,7 @@ pub async fn forgot_password(
     }
     let login = login.to_lowercase();
     let user = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id, email FROM users WHERE email IS NOT NULL AND (lower(email) = $1 OR lower(username) = $1)",
+        "SELECT id, email FROM users WHERE email IS NOT NULL AND (lower(email) = $1 OR lower(username) = $1 OR lower(display_name) = $1)",
     )
     .bind(&login)
     .fetch_optional(&state.pool)

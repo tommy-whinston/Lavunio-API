@@ -544,7 +544,7 @@ async fn registration_validates_input(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn profile_id_and_nickname_can_be_changed(pool: PgPool) {
+async fn nickname_can_be_changed_and_is_used_for_login(pool: PgPool) {
     let (state, _dir) = test_state(pool);
     let app = app(state);
 
@@ -560,7 +560,6 @@ async fn profile_id_and_nickname_can_be_changed(pool: PgPool) {
         "/v1/me/profile",
         Some(&access),
         Some(json!({
-            "username": "Tommy_Whinston",
             "displayName": "Tommy_Whinston",
             "bio": "hello"
         })),
@@ -571,18 +570,28 @@ async fn profile_id_and_nickname_can_be_changed(pool: PgPool) {
     let (status, profile) = send(
         app.clone(),
         Method::GET,
-        "/v1/users/tommywhinston",
+        "/v1/users/Tommy_Whinston",
         None,
         None,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{profile}");
-    assert_eq!(profile["username"], "tommywhinston");
+    assert_eq!(profile["username"], "oldid");
     assert_eq!(profile["displayName"], "Tommy_Whinston");
     assert_eq!(profile["bio"], "hello");
 
+    let (status, login) = send(
+        app.clone(),
+        Method::POST,
+        "/v1/auth/login",
+        None,
+        Some(json!({ "identifier": "Tommy_Whinston", "password": "password 123" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{login}");
+
     let (status, _) = send(app.clone(), Method::GET, "/v1/users/oldid", None, None).await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(status, StatusCode::OK);
 
     let (status, body) = send(
         app.clone(),
@@ -590,7 +599,6 @@ async fn profile_id_and_nickname_can_be_changed(pool: PgPool) {
         "/v1/me/profile",
         Some(&access),
         Some(json!({
-            "username": "tommywhinston",
             "displayName": "12345678901234567",
             "bio": ""
         })),
@@ -610,8 +618,7 @@ async fn profile_id_and_nickname_can_be_changed(pool: PgPool) {
         "/v1/me/profile",
         Some(&other_access),
         Some(json!({
-            "username": "tommywhinston",
-            "displayName": "Other",
+            "displayName": "Tommy_Whinston",
             "bio": ""
         })),
     )

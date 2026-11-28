@@ -11,7 +11,7 @@ use crate::AppState;
 
 async fn user_by_username(pool: &sqlx::PgPool, username: &str) -> Result<(Uuid, String), ApiError> {
     sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id, display_name FROM users WHERE lower(username) = lower($1)",
+        "SELECT id, display_name FROM users WHERE lower(username) = lower($1) OR lower(display_name) = lower($1)",
     )
     .bind(username.trim())
     .fetch_optional(pool)

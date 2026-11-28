@@ -280,7 +280,7 @@ pub async fn authenticate(
         r#"
         SELECT id, display_name, password_hash, minecraft_uuid
         FROM users
-        WHERE lower(email) = lower($1) OR lower(username) = lower($1)
+        WHERE lower(email) = lower($1) OR lower(username) = lower($1) OR lower(display_name) = lower($1)
         "#,
     )
     .bind(username)
@@ -488,7 +488,7 @@ pub async fn signout(State(state): State<AppState>, Json(body): Json<SignoutRequ
         r#"
         SELECT id, password_hash
         FROM users
-        WHERE lower(email) = lower($1) OR lower(username) = lower($1)
+        WHERE lower(email) = lower($1) OR lower(username) = lower($1) OR lower(display_name) = lower($1)
         "#,
     )
     .bind(body.username.trim())

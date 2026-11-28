@@ -117,7 +117,7 @@ pub async fn profile(
                COALESCE(last_seen_at > now() - interval '2 minutes', false) AS online,
                last_seen_at
         FROM users
-        WHERE lower(username) = lower($1)
+        WHERE lower(username) = lower($1) OR lower(display_name) = lower($1)
         "#,
     )
     .bind(username.trim())
@@ -133,25 +133,10 @@ pub async fn update_profile(
     Json(body): Json<UpdateProfileRequest>,
 ) -> Result<Json<SimpleStatus>, ApiError> {
     let user = auth::require_user(&state.pool, &headers).await?;
-    let username = match body.username.trim() {
-        "" => user.username.to_ascii_lowercase(),
-        value => value.to_ascii_lowercase(),
-    };
-    if !auth::validate_username(&username) {
-        return Err(ApiError::BadRequest(
-            "ID профиля: 3–20 символов, только латиница и цифры".to_string(),
-        ));
-    }
     let display_name = body.display_name.trim();
-    if display_name.is_empty() || display_name.chars().count() > 16 {
-        return Err(ApiError::BadRequest("Ник: от 1 до 16 символов".to_string()));
-    }
-    if !display_name
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-    {
+    if !auth::validate_display_name(display_name) {
         return Err(ApiError::BadRequest(
-            "Ник: только латиница, цифры и _".to_string(),
+            "Ник: 1–16 символов, латиница, цифры и _".to_string(),
         ));
     }
     let bio = body.bio.trim();
@@ -159,16 +144,6 @@ pub async fn update_profile(
         return Err(ApiError::BadRequest(
             "Статус: не больше 500 символов".to_string(),
         ));
-    }
-    let taken = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM users WHERE lower(username) = lower($1) AND id <> $2)",
-    )
-    .bind(&username)
-    .bind(user.id)
-    .fetch_one(&state.pool)
-    .await?;
-    if taken {
-        return Err(ApiError::Conflict("Этот ID уже занят".to_string()));
     }
     let display_taken = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS (SELECT 1 FROM users WHERE lower(display_name) = lower($1) AND id <> $2)",
@@ -180,9 +155,8 @@ pub async fn update_profile(
     if display_taken {
         return Err(ApiError::Conflict("Этот ник уже занят".to_string()));
     }
-    sqlx::query("UPDATE users SET username = $2, display_name = $3, bio = $4, updated_at = now() WHERE id = $1")
+    sqlx::query("UPDATE users SET display_name = $2, bio = $3, updated_at = now() WHERE id = $1")
         .bind(user.id)
-        .bind(&username)
         .bind(display_name)
         .bind(bio)
         .execute(&state.pool)
@@ -215,7 +189,7 @@ pub async fn posts(
     Query(query): Query<PostsQuery>,
 ) -> Result<Json<ProfilePostsResponse>, ApiError> {
     let user_id =
-        sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE lower(username) = lower($1)")
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE lower(username) = lower($1) OR lower(display_name) = lower($1)")
             .bind(username.trim())
             .fetch_optional(&state.pool)
             .await?
