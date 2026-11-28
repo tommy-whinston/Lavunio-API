@@ -6,6 +6,7 @@ use axum::Router;
 use http_body_util::BodyExt;
 use image::{ImageEncoder, Rgba, RgbaImage};
 use serde_json::{json, Value};
+use sha2::Digest;
 use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -14,6 +15,17 @@ use lavunio_api::auth;
 use lavunio_api::config::Config;
 use lavunio_api::storage::Storage;
 use lavunio_api::{app, AppState};
+
+/* Настоящий ZIP: submit сканирует архив, фиктивные байты сервер не примет. */
+fn make_zip(name: &str, data: &[u8]) -> Vec<u8> {
+    use std::io::{Cursor, Write};
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored);
+    writer.start_file(name, options).unwrap();
+    writer.write_all(data).unwrap();
+    writer.finish().unwrap().into_inner()
+}
 
 fn test_state(pool: PgPool) -> (AppState, tempfile::TempDir) {
     let dir = tempfile::tempdir().expect("temp storage");
@@ -532,6 +544,10 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
     assert_eq!(status, StatusCode::OK, "{release}");
     let release_id = release["id"].as_str().expect("release id");
 
+    let jar = b"test jar payload";
+    let jar_sha256 = hex::encode(sha2::Sha256::digest(jar));
+    let archive_bytes = make_zip("mods/test.jar", jar);
+
     let (status, upload) = send(
         app.clone(),
         Method::POST,
@@ -540,18 +556,18 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
         Some(json!({
             "kind": "archive",
             "fileName": "build.zip",
-            "size": 11,
+            "size": archive_bytes.len(),
             "manifest": {
                 "version": "0.1.0",
                 "files": {
-                    "mods/test.jar": { "sha256": "abc", "size": 11 }
+                    "mods/test.jar": { "sha256": jar_sha256, "size": jar.len() }
                 },
                 "archive": {
                     "path": "build.zip",
-                    "size": 11,
+                    "size": archive_bytes.len(),
                     "sha256": null,
                     "files": 1,
-                    "bytes": 11,
+                    "bytes": jar.len(),
                     "parts": []
                 }
             }
@@ -570,12 +586,12 @@ async fn publisher_flow_uploads_submits_and_publishes(pool: PgPool) {
         Method::PUT,
         upload_path,
         &token,
-        Bytes::from_static(b"hello world"),
+        Bytes::from(archive_bytes.clone()),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{asset}");
-    assert_eq!(asset["size"], 11);
-    assert_eq!(asset["manifest"]["files"]["mods/test.jar"]["size"], 11);
+    assert_eq!(asset["size"], archive_bytes.len());
+    assert_eq!(asset["manifest"]["files"]["mods/test.jar"]["size"], jar.len());
     assert!(asset["url"].as_str().unwrap().contains("/uploads/"));
 
     let (status, shot_upload) = send(
